@@ -1,0 +1,59 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows-install-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run install.ps1 (one-command installer)
+        shell: pwsh
+        run: |
+          # install.ps1 is the canonical installer. It must NOT be skipped.
+          # If it fails, the CI fails — do not hide the problem.
+          .\install.ps1 -SkipDocker
+
+      - name: Run doctor.ps1 (diagnostic gate)
+        shell: pwsh
+        run: |
+          .\scripts\doctor.ps1
+          # doctor exits non-zero on critical missing — CI must fail
+
+      - name: Run Python tests
+        shell: pwsh
+        env:
+          DATABASE_URL: 'sqlite:///:memory:'
+          PYTHONPATH: .
+        run: |
+          .\.venv\Scripts\python.exe -m pytest tests\ -q --tb=short
+
+      - name: Dashboard build
+        shell: pwsh
+        run: |
+          cd dashboard
+          npm run build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ci-results
+          path: |
+            dashboard/dist/
+            evidence_store/
