@@ -1,0 +1,60 @@
+import type {
+  Camera,
+  Event,
+  EventList,
+  Evidence,
+  Statistics,
+  SystemStatus,
+} from "../types";
+
+const BASE_URL = "/api";
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`API ${res.status}: ${body || res.statusText}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+/* ----------------------------- Cameras ----------------------------- */
+export function getCameras(): Promise<Camera[]> {
+  return apiFetch<Camera[]>("/cameras");
+}
+export function getCamera(id: number): Promise<Camera> {
+  return apiFetch<Camera>(`/cameras/${id}`);
+}
+
+/* ------------------------------ Events ----------------------------- */
+export function getEvents(limit = 50, offset = 0): Promise<EventList> {
+  return apiFetch<EventList>(`/events?limit=${limit}&offset=${offset}`);
+}
+export function getEvent(id: number): Promise<Event> {
+  return apiFetch<Event>(`/events/${id}`);
+}
+
+/* ----------------------------- Evidence ---------------------------- */
+export function getEvidence(eventId: number): Promise<Evidence[]> {
+  return apiFetch<Evidence[]>(`/evidence/${eventId}`);
+}
+export function evidenceFileUrl(relPath: string): string {
+  return `${BASE_URL}/evidence/file/${relPath}`;
+}
+export function cameraStreamUrl(cameraId: number): string {
+  return `${BASE_URL}/cameras/${cameraId}/stream`;
+}
+
+/* --------------------------- Statistics ---------------------------- */
+export function getStatistics(): Promise<Statistics> {
+  return apiFetch<Statistics>("/statistics");
+}
+
+/* ----------------------------- Status ------------------------------ */
+export function getStatus(): Promise<SystemStatus> {
+  return apiFetch<SystemStatus>("/status");
+}

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+venv/
+.venv/
+env/
+
+# Node / Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+dashboard/*.local
+
+# Models / weights
+# - best.pt (litter model) is user-provided and large → ignore it
+# - yolov8n.pt (person model, ~6MB) is auto-downloadable from ultralytics;
+#   we DO commit it so a new user has a working person detector without internet
+inference/detection/weights/*.pt
+inference/detection/weights/*.onnx
+inference/detection/weights/*.pt.*
+!yolov8n.pt
+# keep the weights dir in git even when empty (no .pt inside)
+!inference/detection/weights/
+!inference/detection/weights/.gitkeep
+
+# Evidence artifacts (generated at runtime)
+evidence_store/
+backend/evidence_store/
+*.mp4
+*.avi
+*.mov
+!docs/**/*
+
+# Env / secrets
+.env
+.env.*
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Docker volumes
+pgdata/

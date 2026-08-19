@@ -1,0 +1,23 @@
+# Backend-only runtime dependencies.
+#
+# The root requirements.txt also pins heavy computer-vision packages
+# (ultralytics, opencv-python, tensorflow) that are only needed by the
+# inference engine, not by the backend service. When provisioning a backend
+# environment (e.g. CI, sandbox, or a server that only runs the API), install
+# just these packages to avoid pulling in the CV stack.
+#
+# Install with:
+#   pip install -r backend/_deps_check.txt
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9     # PostgreSQL driver (needed at runtime; not for import check)
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9    # file uploads (evidence)
+
+# Optional: lets Pydantic evaluate PEP 604 `X | None` annotations on Python 3.9.
+# The backend code uses `Optional[X]` to stay 3.9-safe, so this is not required,
+# but it is harmless and helps with forward-compatibility.
+# eval_type_backport>=0.1.3

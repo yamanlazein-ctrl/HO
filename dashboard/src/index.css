@@ -1,0 +1,75 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-base: #0a1020;
+    --bg-panel: #111c2e;
+    --bg-elevated: #16233a;
+    --bg-hover: #1c2c47;
+    --border-subtle: #1f2f4a;
+    --border-default: #283d5c;
+    --text-primary: #e8eef7;
+    --text-secondary: #8ea0bc;
+    --text-muted: #5d6f8e;
+    --accent: #00e5b8;
+    --accent-dim: #00b89a;
+    --accent-glow: rgba(0, 229, 184, 0.18);
+    --danger: #ff4757;
+    --danger-glow: rgba(255, 71, 87, 0.18);
+    --warning: #ffa726;
+    --info: #3b82f6;
+    --success: #00e5b8;
+  }
+
+  * {
+    border-color: var(--border-subtle);
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--accent-glow);
+    color: var(--text-primary);
+  }
+}
+
+@layer components {
+  .panel { @apply rounded-xl border bg-[var(--bg-panel)] border-[var(--border-subtle)]; }
+  .panel-elevated { @apply rounded-xl border bg-[var(--bg-elevated)] border-[var(--border-subtle)]; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .glow-accent { box-shadow: 0 0 24px -8px var(--accent-glow); }
+  .glow-danger { box-shadow: 0 0 24px -8px var(--danger-glow); }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+@keyframes live-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.animate-live-pulse { animation: live-pulse 1.6s ease-in-out infinite; }
+
+@keyframes state-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+.animate-state-in { animation: state-in 0.3s ease-out; }
+
+@keyframes alert-flash {
+  0%,100% { background-color: var(--danger-glow); }
+  50% { background-color: transparent; }
+}
+.animate-alert-flash { animation: alert-flash 2s ease-in-out infinite; }

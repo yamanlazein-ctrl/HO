@@ -1,0 +1,30 @@
+# ============================================================
+# AI-Based CCTV Littering Detection and Evidence System
+# Runtime dependencies for the inference engine + backend
+# ============================================================
+
+# --- Computer Vision / Detection (run on laptop, not in sandbox) ---
+ultralytics>=8.2.0          # YOLO inference (best.pt)
+opencv-python>=4.9.0        # Video I/O, frame handling
+numpy>=1.24.0
+tensorflow>=2.13.0          # MoveNet pose estimation
+# bytetracker is bundled via ultralytics.tracker or a small vendored copy
+
+# --- Inference engine core (works without CV libs — pure logic) ---
+# state machine, voting, association, buffer are stdlib + numpy only
+
+# --- Backend ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9     # PostgreSQL driver
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9    # file uploads (evidence)
+
+# --- Testing ---
+pytest>=8.0.0
+pytest-cov>=4.1.0
+
+# --- Dev / lint ---
+ruff>=0.3.0
