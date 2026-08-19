@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    AI Littering Detection — Canonical Windows installer.
+    AI Littering Detection - Canonical Windows installer.
 
 .DESCRIPTION
     The ONE canonical Windows install command:
@@ -11,7 +11,7 @@
     all deps, checks key imports, verifies model weights, starts PostgreSQL
     (if Docker is available), initialises the DB schema, runs a backend
     health check, builds the frontend, runs the test suite, and performs
-    a minimal inference smoke test — then validates model classes and
+    a minimal inference smoke test - then validates model classes and
     scans the repo for fake/mock/placeholder code.
 
     Every step prints [OK] / [WARNING] / [ERROR] with the step name.
@@ -19,14 +19,14 @@
     critical prerequisite, and does NOT start the AI pipeline or live demo.
 
     Exit codes:
-        0  — zero ERRORs (PASS)
-        1  — one or more critical ERRORs (FAIL)
+        0  - zero ERRORs (PASS)
+        1  - one or more critical ERRORs (FAIL)
 
 .NOTES
     File     : install.ps1
     Location : repo root (canonical installer)
     Platform : Windows PowerShell 5.1+ / PowerShell 7+
-    Verified : UNVERIFIED — this is a PowerShell script and was NOT
+    Verified : UNVERIFIED - this is a PowerShell script and was NOT
                executed in the build sandbox (no PowerShell runtime).
                Written carefully per spec.
 #>
@@ -85,7 +85,7 @@ function Step-Error {
 function Stop-OnBlocking {
     if ($script:BLOCKING.Count -gt 0) {
         Write-Host ""
-        Write-Host "FATAL: Blocking error(s) detected — cannot continue." -ForegroundColor Red
+        Write-Host "FATAL: Blocking error(s) detected - cannot continue." -ForegroundColor Red
         $script:BLOCKING | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
         exit 1
     }
@@ -101,7 +101,7 @@ function Test-Command {
 function Get-VersionMajor {
     param([string]$Cmd)
     try {
-        $out = & $Cmd --version 2>&1 | Select-Object -First 1
+        $out = & $Cmd --version 2>&1
         if ($out -match '(\d+)\.') { return [int]$Matches[1] }
     } catch {}
     return 0
@@ -113,7 +113,7 @@ function Get-VersionMajor {
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  AI Littering Detection — Installer" -ForegroundColor Cyan
+Write-Host "  AI Littering Detection - Installer" -ForegroundColor Cyan
 Write-Host "  Canonical command: .\install.ps1" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -142,7 +142,7 @@ if (Test-Command 'python') {
 if ($pyMajor -ge 3 -and (($pyMajor -eq 3 -and $pyMinor -ge 9) -or $pyMajor -gt 3)) {
     Step-OK "Python >= 3.9" "Found Python $pyVer"
 } else {
-    Step-Error "Python >= 3.9" "Found '$pyVer' — install Python 3.9+ from https://python.org and re-run." -Blocking
+    Step-Error "Python >= 3.9" "Found '$pyVer' - install Python 3.9+ from https://python.org and re-run." -Blocking
     Stop-OnBlocking
 }
 
@@ -161,29 +161,31 @@ if (Test-Command 'node') {
 if ($nodeMajor -ge 18) {
     Step-OK "Node >= 18" "Found $nodeVer"
 } else {
-    Step-Error "Node >= 18" "Found '$nodeVer' — install Node 18+ from https://nodejs.org and re-run." -Blocking
+    Step-Error "Node >= 18" "Found '$nodeVer' - install Node 18+ from https://nodejs.org and re-run." -Blocking
     Stop-OnBlocking
 }
 
 # === 4. npm ================================================================
 if (Test-Command 'npm') {
-    $npmVer = (& npm --version 2>&1 | Select-Object -First 1).ToString().Trim()
+    $npmOut = & npm --version 2>&1
+    $npmVer = ($npmOut | Select-Object -First 1).ToString().Trim()
     Step-OK "npm" "Found npm $npmVer"
 } else {
-    Step-Error "npm" "npm not found — it ships with Node.js. Reinstall Node 18+." -Blocking
+    Step-Error "npm" "npm not found - it ships with Node.js. Reinstall Node 18+." -Blocking
     Stop-OnBlocking
 }
 
 # === 5. git ================================================================
 if (Test-Command 'git') {
-    $gitVer = (& git --version 2>&1 | Select-Object -First 1).ToString().Trim()
+    $gitOut = & git --version 2>&1
+    $gitVer = ($gitOut | Select-Object -First 1).ToString().Trim()
     Step-OK "git" "Found $gitVer"
 } else {
-    Step-Error "git" "git not found — install from https://git-scm.com" -Blocking
+    Step-Error "git" "git not found - install from https://git-scm.com" -Blocking
     Stop-OnBlocking
 }
 
-# === 6. Docker (optional — WARNING if missing, not ERROR) ==================
+# === 6. Docker (optional - WARNING if missing, not ERROR) ==================
 $dockerPresent = $false
 if ($SkipDocker) {
     Step-Warn "Docker Desktop" "Skipped via -SkipDocker"
@@ -191,17 +193,18 @@ if ($SkipDocker) {
     try {
         $null = & docker info 2>&1
         if ($LASTEXITCODE -eq 0) {
-            $dockerVer = (& docker --version 2>&1 | Select-Object -First 1).ToString().Trim()
-            Step-OK "Docker Desktop" "$dockerVer — daemon running"
+            $dockerOut = & docker --version 2>&1
+            $dockerVer = ($dockerOut | Select-Object -First 1).ToString().Trim()
+            Step-OK "Docker Desktop" "$dockerVer - daemon running"
             $dockerPresent = $true
         } else {
-            Step-Warn "Docker Desktop" "docker CLI found but daemon not running — start Docker Desktop"
+            Step-Warn "Docker Desktop" "docker CLI found but daemon not running - start Docker Desktop"
         }
     } catch {
         Step-Warn "Docker Desktop" "docker CLI found but daemon not reachable"
     }
 } else {
-    Step-Warn "Docker Desktop" "Not installed — PostgreSQL will need Docker OR an external Postgres"
+    Step-Warn "Docker Desktop" "Not installed - PostgreSQL will need Docker OR an external Postgres"
 }
 
 # === 7. Create Python venv (.venv) ========================================
@@ -210,7 +213,7 @@ if (Test-Path (Join-Path $venvPath 'Scripts\python.exe')) {
     Step-OK "Python venv" ".venv already exists"
 } else {
     try {
-        & python -m venv .venv 2>&1 | Out-Null
+        $venvResult = & python -m venv .venv | Out-Null 2>$null
         if (Test-Path (Join-Path $venvPath 'Scripts\python.exe')) {
             Step-OK "Python venv" "Created .venv"
         } else {
@@ -235,7 +238,8 @@ Step-OK "venv activation" ".venv\Scripts\python.exe"
 # === 8. pip install -r requirements.txt ===================================
 Write-Host "[..] pip install -r requirements.txt (this can take a few minutes)..." -ForegroundColor DarkGray
 try {
-    & $venvPip install -r requirements.txt 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    $pipOut = & $venvPip install -r requirements.txt 2>&1
+    $pipOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     if ($LASTEXITCODE -eq 0) {
         Step-OK "pip install requirements" "All packages installed"
     } else {
@@ -255,7 +259,8 @@ if (Test-Path $nodeModules) {
     Write-Host "[..] npm install (dashboard)..." -ForegroundColor DarkGray
     try {
         Push-Location (Join-Path $PSScriptRoot 'dashboard')
-        & npm install 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+        $npmOut = & npm install 2>&1
+        $npmOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
         $npmExit = $LASTEXITCODE
         Pop-Location
         if ($npmExit -eq 0) {
@@ -282,7 +287,7 @@ $packages = @(
 foreach ($pkg in $packages) {
     $stepName = "import $($pkg.Name)"
     try {
-        & $venvPython -c "import $($pkg.Name)" 2>&1 | Out-Null
+        $impOut = & $venvPython -c "import $($pkg.Name)" | Out-Null 2>$null
         if ($LASTEXITCODE -eq 0) {
             Step-OK $stepName "imported successfully"
         } else {
@@ -292,10 +297,10 @@ foreach ($pkg in $packages) {
         Step-Error $stepName "Exception: $_"
     }
 }
-# If any critical import failed, stop — we cannot proceed.
+# If any critical import failed, stop - we cannot proceed.
 if ($script:ERROR_COUNT -gt 0) {
     Stop-OnBlocking
-    # Even non-blocking import errors are fatal here — we need all packages
+    # Even non-blocking import errors are fatal here - we need all packages
     Write-Host ""
     Write-Host "FATAL: One or more critical Python packages failed to import." -ForegroundColor Red
     Write-Host "Errors:" -ForegroundColor Red
@@ -310,7 +315,7 @@ if (Test-Path $weightsPath) {
     Step-OK "best.pt weights" "Found ($([math]::Round($size/1MB,1)) MB)"
 } else {
     Step-Error "best.pt weights" @"
-best.pt is MISSING — this model is REQUIRED for litter detection.
+best.pt is MISSING - this model is REQUIRED for litter detection.
 
   HOW TO GET IT:
     1. Clone the reference repo: Anti-Littering-System-Computer-Vision (MIT)
@@ -319,7 +324,7 @@ best.pt is MISSING — this model is REQUIRED for litter detection.
     3. Copy it to:
        inference/detection/weights/best.pt
 
-  Do NOT fabricate or substitute the file — the custom YOLO classes
+  Do NOT fabricate or substitute the file - the custom YOLO classes
   (plastic bottle, juice cup, tissue paper, ...) are baked into best.pt.
 "@ -Blocking
     Write-Host ""
@@ -333,7 +338,7 @@ if (Test-Path $yoloPath) {
     $size = (Get-Item $yoloPath).Length
     Step-OK "yolov8n.pt" "Found ($([math]::Round($size/1MB,1)) MB)"
 } else {
-    Step-Error "yolov8n.pt" "MISSING — download yolov8n.pt (ultralytics auto-downloads on first use, but it should be present)"
+    Step-Error "yolov8n.pt" "MISSING - download yolov8n.pt (ultralytics auto-downloads on first use, but it should be present)"
 }
 
 # === 19. Create .env from .env.example ====================================
@@ -345,7 +350,7 @@ if (Test-Path $envFile) {
     Copy-Item $envExample $envFile
     Step-OK ".env" "Created from .env.example"
 } else {
-    Step-Error ".env" ".env.example not found at repo root — cannot create .env"
+    Step-Error ".env" ".env.example not found at repo root - cannot create .env"
 }
 
 # === 20. Create evidence_store/ and inference/detection/weights/ dirs =====
@@ -370,7 +375,8 @@ $dbStarted = $false
 if ($dockerPresent -and -not $SkipDocker) {
     Write-Host "[..] docker-compose up -d postgres..." -ForegroundColor DarkGray
     try {
-        & docker-compose up -d postgres 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+        $dcOut = & docker-compose up -d postgres 2>&1
+        $dcOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
         # Wait for health (up to 60 seconds)
         $healthy = $false
         for ($i = 0; $i -lt 12; $i++) {
@@ -382,13 +388,13 @@ if ($dockerPresent -and -not $SkipDocker) {
             Step-OK "PostgreSQL" "Container healthy"
             $dbStarted = $true
         } else {
-            Step-Warn "PostgreSQL" "Container started but health check did not confirm — check Docker logs"
+            Step-Warn "PostgreSQL" "Container started but health check did not confirm - check Docker logs"
         }
     } catch {
         Step-Warn "PostgreSQL" "docker-compose failed: $_"
     }
 } else {
-    Step-Warn "PostgreSQL" "Docker not available — set DATABASE_URL in .env to an external Postgres"
+    Step-Warn "PostgreSQL" "Docker not available - set DATABASE_URL in .env to an external Postgres"
 }
 
 # === 22. Initialise DB schema =============================================
@@ -405,14 +411,15 @@ if (-not $dbUrl) { $dbUrl = 'postgresql://litter:litter@localhost:5432/littering
 try {
     $env:DATABASE_URL = $dbUrl
     $env:PYTHONPATH   = $PSScriptRoot
-    & $venvPython -c "from backend.database import Base, create_all; create_all()" 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    $schemaOut = & $venvPython -c "from backend.database import Base, create_all; create_all()" 2>&1
+    $schemaOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     if ($LASTEXITCODE -eq 0) {
         Step-OK "DB schema init" "Tables created (or already existed)"
     } else {
-        Step-Warn "DB schema init" "create_all() returned exit $LASTEXITCODE — DB may be offline; tests use SQLite fallback"
+        Step-Warn "DB schema init" "create_all() returned exit $LASTEXITCODE - DB may be offline; tests use SQLite fallback"
     }
 } catch {
-    Step-Warn "DB schema init" "Exception: $_ — DB may be offline"
+    Step-Warn "DB schema init" "Exception: $_ - DB may be offline"
 }
 
 # === 23. Backend health check (start uvicorn, curl /health, kill) =========
@@ -445,7 +452,7 @@ try {
         } catch {}
     }
 } catch {
-    # ignore — will report below
+    # ignore - will report below
 }
 finally {
     if ($proc -and -not $proc.HasExited) {
@@ -456,14 +463,15 @@ finally {
 if ($healthOk) {
     Step-OK "Backend health check" "GET /health returned status=ok"
 } else {
-    Step-Warn "Backend health check" "Could not reach /health — backend may need DB. Check logs: $env:TEMP\uvicorn_err.log"
+    Step-Warn "Backend health check" "Could not reach /health - backend may need DB. Check logs: $env:TEMP\uvicorn_err.log"
 }
 
 # === 24. Frontend build ===================================================
 Write-Host "[..] npm run build (dashboard)..." -ForegroundColor DarkGray
 try {
     Push-Location (Join-Path $PSScriptRoot 'dashboard')
-    & npm run build 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    $buildOut = & npm run build 2>&1
+    $buildOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     $buildExit = $LASTEXITCODE
     Pop-Location
     $distPath = Join-Path $PSScriptRoot 'dashboard\dist'
@@ -481,12 +489,13 @@ try {
 Write-Host "[..] pytest tests/ -q..." -ForegroundColor DarkGray
 $env:PYTHONPATH = $PSScriptRoot
 try {
-    & $venvPython -m pytest tests/ -q 2>&1 | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    $testOut = & $venvPython -m pytest tests/ -q 2>&1
+    $testOut | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     $testExit = $LASTEXITCODE
     if ($testExit -eq 0) {
         Step-OK "Tests" "All tests passed"
     } else {
-        Step-Error "Tests" "pytest exit code $testExit — some tests failed"
+        Step-Error "Tests" "pytest exit code $testExit - some tests failed"
     }
 } catch {
     Step-Error "Tests" "Exception: $_"
@@ -494,7 +503,7 @@ try {
 
 # === 26. AI import check ==================================================
 try {
-    & $venvPython -c "import ultralytics, cv2, tensorflow" 2>&1 | Out-Null
+    $aiOut = & $venvPython -c "import ultralytics, cv2, tensorflow" | Out-Null 2>$null
     if ($LASTEXITCODE -eq 0) {
         Step-OK "AI import check" "ultralytics + cv2 + tensorflow all imported"
     } else {
@@ -507,7 +516,7 @@ try {
 # === 27. Smoke test: InferencePipeline ====================================
 try {
     $env:PYTHONPATH = $PSScriptRoot
-    & $venvPython -c "from inference.pipeline import InferencePipeline, PipelineConfig; InferencePipeline(PipelineConfig())" 2>&1 | Out-Null
+    $smokeOut = & $venvPython -c "from inference.pipeline import InferencePipeline, PipelineConfig; InferencePipeline(PipelineConfig())" | Out-Null 2>$null
     if ($LASTEXITCODE -eq 0) {
         Step-OK "Inference smoke test" "InferencePipeline(PipelineConfig()) instantiated"
     } else {
@@ -592,7 +601,7 @@ except Exception as e:
         Step-Warn "Model loaded" "Could not parse model classes"
     }
 } else {
-    Step-Warn "Model class validation" "Skipped — best.pt not found"
+    Step-Warn "Model class validation" "Skipped - best.pt not found"
 }
 
 # === 29. Repository scan: fake/mock/placeholder/dummy in production code ===
