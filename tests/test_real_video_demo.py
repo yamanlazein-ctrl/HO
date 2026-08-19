@@ -43,9 +43,7 @@ import os
 import sys
 import tempfile
 
-import numpy as np
 import pytest
-import cv2
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -90,6 +88,13 @@ def _build_real_littering_video(path: str) -> bool:
     location in the moving person image is blanked so the bottle visibly
     "leaves" the person.
     """
+    # lazy imports — cv2/numpy may be unavailable, and importing them at module
+    # level would break collection of the ENTIRE test suite (the audit found
+    # this: a bare `import cv2` at the top crashed pytest collection when
+    # libGL.so.1 was missing). Keep them inside the function.
+    import cv2
+    import numpy as np
+
     img = cv2.imread(REAL_IMAGE)
     if img is None:
         return False
