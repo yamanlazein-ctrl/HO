@@ -70,6 +70,17 @@ export interface SystemStatus {
     frames_buffered: number;
     buffer_duration: number;
   };
+  live_state?: {
+    ai_state: string;
+    active_pairs: number;
+    entities: Array<{
+      trackId: number;
+      label: string;
+      bbox: { x: number; y: number; w: number; h: number };
+      confidence: number;
+      isPerson: boolean;
+    }>;
+  };
   events_today: number;
   active_cameras: number;
   updated_at: string;
