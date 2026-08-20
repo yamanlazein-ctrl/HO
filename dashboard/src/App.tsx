@@ -6,6 +6,7 @@ import { Header } from "./components/Header";
 import { Dashboard } from "./pages/Dashboard";
 import { Cameras } from "./pages/Cameras";
 import { LiveMonitoring } from "./pages/LiveMonitoring";
+import { VideoAnalysisPage } from "./pages/VideoAnalysisPage";
 import { Violations } from "./pages/Violations";
 import { EvidencePage } from "./pages/EvidencePage";
 import { Analytics } from "./pages/Analytics";
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/cameras" element={<Cameras />} />
             <Route path="/live" element={<LiveMonitoring />} />
+            <Route path="/analysis" element={<VideoAnalysisPage />} />
             <Route path="/violations" element={<Violations />} />
             <Route path="/violations/:id" element={<EventDetail />} />
             <Route path="/evidence" element={<EvidencePage />} />
