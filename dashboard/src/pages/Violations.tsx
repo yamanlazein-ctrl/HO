@@ -20,6 +20,7 @@ export function Violations() {
   const { data, loading } = useFetch(
     () => getEvents(PAGE_SIZE, page * PAGE_SIZE),
     [page],
+    4000
   );
 
   const events = data?.items ?? [];
