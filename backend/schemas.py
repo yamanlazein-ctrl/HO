@@ -107,3 +107,37 @@ class EventListOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# --------------------------------------------------------------------------- #
+# Video Analysis Job Schemas
+# --------------------------------------------------------------------------- #
+class VideoAnalysisJobBase(BaseModel):
+    filename: str
+    original_filename: str
+    status: str = "queued"
+    duration_sec: Optional[float] = None
+    total_frames: Optional[int] = None
+    processed_frames: int = 0
+    fps: Optional[float] = None
+    processing_fps: Optional[float] = None
+    events_count: int = 0
+    persons_detected: int = 0
+    objects_detected: int = 0
+    report_json: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+class VideoAnalysisJobOut(VideoAnalysisJobBase):
+    id: int
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class VideoAnalysisJobListOut(BaseModel):
+    items: List[VideoAnalysisJobOut]
+    total: int
+    limit: int
+    offset: int
