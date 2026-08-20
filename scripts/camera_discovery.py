@@ -129,36 +129,43 @@ def _import_numpy():
 def _open_capture(index: int, cv2):
     """Open a VideoCapture on the given index in a cross-platform way.
 
-    On Windows we try the MSMF backend first (default), on Linux we rely on
-    V4L2 (the default).  If the default open fails we try a couple of
-    explicit backends before giving up.
+    On Windows we try DSHOW and MSMF explicitly so OpenCV does not default
+    to FFMPEG for live webcam capture (which produces the warning
+    'OpenCV should be configured with libavdevice to open a camera device').
+    On Linux we rely on V4L2.
     """
-    # Default backend (OS-appropriate)
-    cap = cv2.VideoCapture(index)
-    if cap.isOpened():
-        return cap, None
-
-    # Try explicit backends — helps on some Linux / WSL setups
     backends_to_try = []
-    if sys.platform.startswith("linux"):
+    if sys.platform == "win32":
+        backends_to_try = [
+            getattr(cv2, "CAP_DSHOW", None),
+            getattr(cv2, "CAP_MSMF", None),
+        ]
+    elif sys.platform.startswith("linux"):
         backends_to_try = [
             getattr(cv2, "CAP_V4L2", None),
             getattr(cv2, "CAP_GSTREAMER", None),
         ]
-    elif sys.platform == "win32":
-        backends_to_try = [
-            getattr(cv2, "CAP_MSMF", None),
-            getattr(cv2, "CAP_DSHOW", None),
-        ]
+
     for backend in backends_to_try:
         if backend is None:
             continue
-        cap = cv2.VideoCapture(index, backend)
+        try:
+            cap = cv2.VideoCapture(index, backend)
+            if cap.isOpened():
+                return cap, cv2.__dict__.get(
+                    "_backend_name_" + str(backend), f"backend-{backend}"
+                )
+            cap.release()
+        except Exception:
+            pass
+
+    # Default fallback
+    try:
+        cap = cv2.VideoCapture(index)
         if cap.isOpened():
-            return cap, cv2.__dict__.get(
-                "_backend_name_" + str(backend), f"backend-{backend}"
-            )
-        cap.release()
+            return cap, None
+    except Exception:
+        pass
 
     return None, "open failed"
 

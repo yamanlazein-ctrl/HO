@@ -158,7 +158,7 @@ Read-Host "  Press Enter to detect the camera"
 # --- camera discovery (real, no faking) ---
 Write-Host ""
 Write-Host "  Detecting cameras..." -ForegroundColor Gray
-$camOut = & $py scripts/camera_discovery.py 2>&1
+$camOut = & $py scripts/camera_discovery.py 2>$null
 Write-Host $camOut
 Write-Host ""
 

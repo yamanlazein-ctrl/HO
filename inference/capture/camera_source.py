@@ -66,8 +66,21 @@ class CameraSource:
         self._frame_index = 0
 
     def open(self) -> bool:
+        import sys
         import cv2  # type: ignore
-        self._cap = cv2.VideoCapture(self.device_index)
+        # On Windows, try CAP_DSHOW and CAP_MSMF explicitly to avoid FFMPEG fallback warning
+        if sys.platform == "win32":
+            for backend in [getattr(cv2, "CAP_DSHOW", None), getattr(cv2, "CAP_MSMF", None)]:
+                if backend is not None:
+                    try:
+                        self._cap = cv2.VideoCapture(self.device_index, backend)
+                        if self._cap.isOpened():
+                            break
+                        self._cap.release()
+                    except Exception:
+                        pass
+        if self._cap is None or not self._cap.isOpened():
+            self._cap = cv2.VideoCapture(self.device_index)
         if not self._cap.isOpened():
             return False
         if self.resolution:
