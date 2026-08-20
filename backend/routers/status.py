@@ -65,6 +65,11 @@ _DEFAULT_STATUS: Dict[str, Any] = {
         "frames_buffered": 0,
         "buffer_duration": 0.0,
     },
+    "live_state": {
+        "ai_state": "UNKNOWN",
+        "active_pairs": 0,
+        "entities": [],
+    },
     "events_today": 0,
     "active_cameras": 0,
     "updated_at": None,
