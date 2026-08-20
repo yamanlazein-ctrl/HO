@@ -1,5 +1,5 @@
 # ============================================================================
-#  AI Littering Detection — FIRST-RUN SETUP WIZARD
+#  AI Littering Detection - FIRST-RUN SETUP WIZARD
 #  .\start.ps1
 #
 #  After .\install.ps1 completes, this wizard guides the user through:
@@ -112,7 +112,7 @@ Write-Host ""
 $liveIdx = -1
 if ($camOut -match "Idx\s+(\d+)\s+LIVE") { $liveIdx = $Matches[1] }
 if ($liveIdx -lt 0) {
-    Write-Status "WAITING" "iPhone Camera" "no LIVE camera detected — connect iPhone via Camo and re-run"
+    Write-Status "WAITING" "iPhone Camera" "no LIVE camera detected - connect iPhone via Camo and re-run"
     Write-Host ""
     Write-Host "  The wizard cannot continue without a real camera." -ForegroundColor Yellow
     Write-Host "  Re-run .\start.ps1 after connecting the iPhone." -ForegroundColor Yellow
@@ -126,7 +126,7 @@ Write-Host ""
 Write-Host "  Step 2/4  Camera verification" -ForegroundColor Yellow
 Write-Host "  ---------------------------" -ForegroundColor DarkGray
 Write-Host ""
-$verifyOut = & $py -c "
+$verifyScript = @"
 import cv2, time, sys
 cap = cv2.VideoCapture($CameraDevice)
 if not cap.isOpened():
@@ -136,7 +136,7 @@ prev = None; fresh = False
 for i in range(30):
     ok, f = cap.read()
     if not ok: print('ERROR: read failed at frame %d' % i); sys.exit(1)
-    if f is None: print('ERROR: frame is None at %d' % i); sys.exit(1)
+    if f is None: print('ERROR: frame is None at frame %d' % i); sys.exit(1)
     h, w = f.shape[:2]
     if i == 0: print('Resolution: %dx%d' % (w, h))
     if prev is not None:
@@ -149,13 +149,17 @@ bright = float(f.mean())
 print('Measured FPS: %.1f' % fps_meas)
 print('Brightness: %.1f' % bright)
 print('Frame freshness: %s' % ('LIVE' if fresh else 'FROZEN'))
-if bright < 5: print('WARNING: frame is very dark — improve lighting')
+if bright < 5: print('WARNING: frame is very dark - improve lighting')
 cap.release()
-" 2>&1
+"@
+$verifyPy = Join-Path $env:TEMP "ai_littering_verify.py"
+Set-Content -Path $verifyPy -Value $verifyScript -Encoding UTF8
+$verifyOut = & $py $verifyPy 2>&1
+Remove-Item $verifyPy -ErrorAction SilentlyContinue
 Write-Host $verifyOut
 if ($verifyOut -match "ERROR") {
     Write-Host ""
-    Write-Status "ERROR" "Camera verification" "frames not valid — check Camo connection"
+    Write-Status "ERROR" "Camera verification" "frames not valid - check Camo connection"
     exit 1
 }
 Write-Status "OK" "Camera verification" "real frames producing"
@@ -174,15 +178,23 @@ Write-Host "    - object large enough in the image (>50px)"
 Write-Host "    - avoid heavy background clutter"
 Write-Host ""
 Write-Host "  These are recommended starting values, not scientifically guaranteed." -ForegroundColor DarkGray
-Write-Host "  A live preview is open in a window — position the camera, then close it." -ForegroundColor DarkGray
+Write-Host "  A live preview is open in a window - position the camera, then close it." -ForegroundColor DarkGray
 Write-Host ""
-& $py -c "import cv2; cap=cv2.VideoCapture($CameraDevice); 
+$previewScript = @"
+import cv2
+cap = cv2.VideoCapture($CameraDevice)
 while True:
-    ok,f=cap.read()
+    ok, f = cap.read()
     if not ok: break
-    cv2.imshow('Camera Preview — position the camera, press Q when done', f)
-    if cv2.waitKey(1)&0xFF==ord('q'): break
-cap.release(); cv2.destroyAllWindows()" 2>&1 | Out-Null
+    cv2.imshow('Camera Preview - position the camera, press Q when done', f)
+    if cv2.waitKey(1) & 0xFF == ord('q'): break
+cap.release()
+cv2.destroyAllWindows()
+"@
+$previewPy = Join-Path $env:TEMP "ai_littering_preview.py"
+Set-Content -Path $previewPy -Value $previewScript -Encoding UTF8
+& $py $previewPy 2>&1 | Out-Null
+Remove-Item $previewPy -ErrorAction SilentlyContinue
 Write-Status "OK" "Camera positioning" "user confirmed"
 
 # --- Step 4: AI smoke test (real frames through the full pipeline) ---
@@ -191,10 +203,10 @@ Write-Host "  Step 4/4  AI smoke test" -ForegroundColor Yellow
 Write-Host "  ---------------------------" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Running real frames through the AI pipeline..." -ForegroundColor Gray
-Write-Host "  (This reads ~20 real camera frames through YOLO → ByteTrack → MoveNet →" -ForegroundColor DarkGray
-Write-Host "   Association → State Machine → Voting. No synthetic tracks.)" -ForegroundColor DarkGray
+Write-Host "  (This reads ~20 real camera frames through YOLO -> ByteTrack -> MoveNet ->" -ForegroundColor DarkGray
+Write-Host "   Association -> State Machine -> Voting. No synthetic tracks.)" -ForegroundColor DarkGray
 Write-Host ""
-$smokeOut = & $py -c "
+$smokeScript = @"
 import cv2, time, sys
 sys.path.insert(0, '.')
 from inference.detection.yolo_detector import YoloDetector
@@ -209,14 +221,14 @@ det = YoloDetector(); det.load()
 mv = MovenetPose(); mv.load()
 tr = BytetrackTracker(); tr.load()
 cfg = PipelineConfig(analysis_fps=30.0)
-cfg.assoc_config.min_persistence=2
+cfg.assoc_config.min_persistence = 2
 pipe = InferencePipeline(cfg)
-person_ids=set(); stable=True; prev_ids=None
+person_ids = set(); stable = True; prev_ids = None
 for i in range(20):
-    ok,f=cap.read()
+    ok, f = cap.read()
     if not ok: print('[ERROR] read'); break
     tracked = det.track(f, persist=True)
-    persons,objects = build_tracks_real(f, tracked, mv, tr, i)
+    persons, objects = build_tracks_real(f, tracked, mv, tr, i)
     ids = tuple(sorted(p.track_id for p in persons))
     person_ids.update(ids)
     if prev_ids is not None and ids != prev_ids:
@@ -234,7 +246,11 @@ print('[OK] Voting')
 print('[OK] Evidence Buffer')
 print('Person tracks seen: %s' % sorted(person_ids))
 cap.release()
-" 2>&1
+"@
+$smokePy = Join-Path $env:TEMP "ai_littering_smoke.py"
+Set-Content -Path $smokePy -Value $smokeScript -Encoding UTF8
+$smokeOut = & $py $smokePy 2>&1
+Remove-Item $smokePy -ErrorAction SilentlyContinue
 Write-Host $smokeOut
 if ($smokeOut -match "\[ERROR\]") {
     Write-Host ""
@@ -242,7 +258,7 @@ if ($smokeOut -match "\[ERROR\]") {
     exit 1
 }
 if ($smokeOut -match "\[WARNING\].*Stable") {
-    Write-Status "WARNING" "Tracking stability" "IDs changed across frames — check lighting/angle"
+    Write-Status "WARNING" "Tracking stability" "IDs changed across frames - check lighting/angle"
 }
 
 # --- Final ---
