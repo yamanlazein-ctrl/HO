@@ -2,12 +2,18 @@
 #  AI Littering Detection - FIRST-RUN SETUP WIZARD
 #  .\start.ps1
 #
-#  After .\install.ps1 completes, this wizard guides the user through:
-#    Step 1/4  Camera connection  (WAITING FOR IPHONE until Camo is detected)
-#    Step 2/4  Camera verification  (real frames: resolution, FPS, freshness)
-#    Step 3/4  Camera positioning   (placement guide + live preview)
-#    Step 4/4  AI smoke test       (real frames through the full pipeline)
+#  CORRECT FLOW (user-requested):
+#    1. Dashboard opens in browser FIRST
+#    2. Backend + PostgreSQL start in background
+#    3. Dashboard shows "WAITING FOR IPHONE"
+#    4. User connects iPhone via Camo
+#    5. Dashboard detects camera -> shows "PHONE CONNECTED"
+#    6. Camera verification (resolution, FPS, freshness)
+#    7. Camera positioning (live preview)
+#    8. AI smoke test (real frames through full pipeline)
+#    9. Dashboard shows "SYSTEM READY FOR LIVE DEMO"
 #
+#  The dashboard is the primary UI. PowerShell is just the launcher.
 #  The system NEVER claims "READY" until a real camera produces valid frames
 #  AND the AI smoke test passes on those real frames. No fake data.
 # ============================================================================
@@ -52,8 +58,13 @@ if (-not (Test-Path "dashboard\node_modules")) {
 }
 Write-Status "OK" "Installation verified"
 
-# --- start infrastructure (postgres + backend) so the wizard can use them ---
 $py = ".venv\Scripts\python.exe"
+
+# ============================================================================
+# STEP 0: Start infrastructure (PostgreSQL + Backend) in background
+# ============================================================================
+Write-Host ""
+Write-Host "  Starting infrastructure..." -ForegroundColor Gray
 
 # Start PostgreSQL if Docker is available
 $dockerPresent = $false
@@ -84,20 +95,63 @@ try {
     Write-Status "WARNING" "Backend" "not reachable; dashboard will show limited data"
 }
 
+# ============================================================================
+# STEP 1: Open the Dashboard in the browser FIRST
+# ============================================================================
 Write-Host ""
+Write-Host "  Opening Dashboard in browser..." -ForegroundColor Gray
+
+$dashUrl = "http://localhost:5173"
+
+# Start dashboard dev server in background
+$dashProc = Start-Process powershell -PassThru -ArgumentList "-NoExit", "-Command", "cd dashboard; npx serve dist -l 5173"
+
+# Wait for dashboard to be reachable
+Start-Sleep -Seconds 3
+$dashOk = $false
+try {
+    $null = Invoke-RestMethod -Uri $dashUrl -TimeoutSec 5 -ErrorAction Stop
+    $dashOk = $true
+} catch {
+    Start-Sleep -Seconds 3
+    try {
+        $null = Invoke-RestMethod -Uri $dashUrl -TimeoutSec 5 -ErrorAction Stop
+        $dashOk = $true
+    } catch {}
+}
+
+if ($dashOk) {
+    Write-Status "OK" "Dashboard" $dashUrl
+    # Open in default browser
+    Start-Process $dashUrl
+} else {
+    Write-Status "WARNING" "Dashboard" "could not reach $dashUrl - open manually"
+}
+
+Write-Host ""
+Write-Host "  The Dashboard is now open in your browser." -ForegroundColor Green
+Write-Host "  You can watch the camera connection status there." -ForegroundColor Green
+Write-Host ""
+
+# ============================================================================
+# STEP 2: Wait for iPhone camera connection
+# ============================================================================
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host "  Step 1/4  Camera connection" -ForegroundColor Yellow
-Write-Host "  ---------------------------" -ForegroundColor DarkGray
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Status: WAITING FOR IPHONE" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Please connect your iPhone to this Windows computer:"
-Write-Host "    1. Install/open Camo on the iPhone (App Store)"
-Write-Host "    2. Connect iPhone to Windows using USB"
-Write-Host "    3. Open Camo Studio on Windows"
-Write-Host "    4. Select the iPhone camera in Camo Studio"
-Write-Host "    5. Allow Windows camera permissions if prompted"
-Write-Host "    6. Keep the iPhone unlocked"
-Write-Host "    7. Press [Detect Camera] below"
+Write-Host "  The Dashboard is showing 'WAITING FOR CAMERA'." -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Please connect your iPhone to this Windows computer:" -ForegroundColor White
+Write-Host "    1. Install/open Camo on the iPhone (App Store)" -ForegroundColor White
+Write-Host "    2. Connect iPhone to Windows using USB" -ForegroundColor White
+Write-Host "    3. Open Camo Studio on Windows" -ForegroundColor White
+Write-Host "    4. Select the iPhone camera in Camo Studio" -ForegroundColor White
+Write-Host "    5. Allow Windows camera permissions if prompted" -ForegroundColor White
+Write-Host "    6. Keep the iPhone unlocked" -ForegroundColor White
+Write-Host "    7. Press [Enter] when the iPhone is connected" -ForegroundColor White
 Write-Host ""
 Read-Host "  Press Enter to detect the camera"
 
@@ -114,18 +168,27 @@ if ($camOut -match "Idx\s+(\d+)\s+LIVE") { $liveIdx = $Matches[1] }
 if ($liveIdx -lt 0) {
     Write-Status "WAITING" "iPhone Camera" "no LIVE camera detected - connect iPhone via Camo and re-run"
     Write-Host ""
-    Write-Host "  The wizard cannot continue without a real camera." -ForegroundColor Yellow
+    Write-Host "  The Dashboard is still showing 'WAITING FOR CAMERA'." -ForegroundColor Gray
     Write-Host "  Re-run .\start.ps1 after connecting the iPhone." -ForegroundColor Yellow
     exit 1
 }
 Write-Status "OK" "iPhone Camera" "device index $liveIdx (LIVE)"
 $CameraDevice = $liveIdx
 
-# --- Step 2: camera verification ---
 Write-Host ""
+Write-Host "  The Dashboard should now show 'PHONE CONNECTED'." -ForegroundColor Green
+Write-Host ""
+
+# ============================================================================
+# STEP 3: Camera verification (real frames)
+# ============================================================================
+Write-Host ""
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host "  Step 2/4  Camera verification" -ForegroundColor Yellow
-Write-Host "  ---------------------------" -ForegroundColor DarkGray
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  Verifying real camera frames..." -ForegroundColor Gray
+
 $verifyScript = @"
 import cv2, time, sys
 cap = cv2.VideoCapture($CameraDevice)
@@ -164,22 +227,26 @@ if ($verifyOut -match "ERROR") {
 }
 Write-Status "OK" "Camera verification" "real frames producing"
 
-# --- Step 3: camera positioning ---
+# ============================================================================
+# STEP 4: Camera positioning (live preview)
+# ============================================================================
 Write-Host ""
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host "  Step 3/4  Camera positioning" -ForegroundColor Yellow
-Write-Host "  ---------------------------" -ForegroundColor DarkGray
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Recommended starting setup:" -ForegroundColor White
-Write-Host "    - fixed position (no camera movement)"
-Write-Host "    - clear view of person and ground"
-Write-Host "    - avoid strong backlight"
-Write-Host "    - enough lighting (daytime recommended)"
-Write-Host "    - object large enough in the image (>50px)"
-Write-Host "    - avoid heavy background clutter"
+Write-Host "    - fixed position (no camera movement)" -ForegroundColor White
+Write-Host "    - clear view of person and ground" -ForegroundColor White
+Write-Host "    - avoid strong backlight" -ForegroundColor White
+Write-Host "    - enough lighting (daytime recommended)" -ForegroundColor White
+Write-Host "    - object large enough in the image (>50px)" -ForegroundColor White
+Write-Host "    - avoid heavy background clutter" -ForegroundColor White
 Write-Host ""
 Write-Host "  These are recommended starting values, not scientifically guaranteed." -ForegroundColor DarkGray
 Write-Host "  A live preview is open in a window - position the camera, then close it." -ForegroundColor DarkGray
 Write-Host ""
+
 $previewScript = @"
 import cv2
 cap = cv2.VideoCapture($CameraDevice)
@@ -197,15 +264,19 @@ Set-Content -Path $previewPy -Value $previewScript -Encoding UTF8
 Remove-Item $previewPy -ErrorAction SilentlyContinue
 Write-Status "OK" "Camera positioning" "user confirmed"
 
-# --- Step 4: AI smoke test (real frames through the full pipeline) ---
+# ============================================================================
+# STEP 5: AI smoke test (real frames through full pipeline)
+# ============================================================================
 Write-Host ""
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host "  Step 4/4  AI smoke test" -ForegroundColor Yellow
-Write-Host "  ---------------------------" -ForegroundColor DarkGray
+Write-Host "  ===========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Running real frames through the AI pipeline..." -ForegroundColor Gray
 Write-Host "  (This reads ~20 real camera frames through YOLO -> ByteTrack -> MoveNet ->" -ForegroundColor DarkGray
 Write-Host "   Association -> State Machine -> Voting. No synthetic tracks.)" -ForegroundColor DarkGray
 Write-Host ""
+
 $smokeScript = @"
 import cv2, time, sys
 sys.path.insert(0, '.')
@@ -261,16 +332,23 @@ if ($smokeOut -match "\[WARNING\].*Stable") {
     Write-Status "WARNING" "Tracking stability" "IDs changed across frames - check lighting/angle"
 }
 
-# --- Final ---
+# ============================================================================
+# FINAL: System ready
+# ============================================================================
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  SYSTEM READY FOR LIVE DEMO" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "  The Dashboard is open at: $dashUrl" -ForegroundColor Green
 Write-Host "  All critical checks passed." -ForegroundColor Green
+Write-Host ""
 Write-Host "  Next: place the iPhone in a fixed position," -ForegroundColor White
 Write-Host "        place the trash area in the scene," -ForegroundColor White
 Write-Host "        and run: .\demo.ps1" -ForegroundColor White
 Write-Host ""
 
-if ($backendProc) { Stop-Process -Id $backendProc.Id -Force -ErrorAction SilentlyContinue }
+# Keep backend + dashboard running for the user
+# (they stay open in background windows)
+Write-Host "  Backend and Dashboard are running in background windows." -ForegroundColor DarkGray
+Write-Host "  Close them manually when done." -ForegroundColor DarkGray
