@@ -5,6 +5,8 @@ import type {
   Evidence,
   Statistics,
   SystemStatus,
+  VideoAnalysisJob,
+  VideoAnalysisJobList,
 } from "../types";
 
 const BASE_URL = "/api";
@@ -57,4 +59,27 @@ export function getStatistics(): Promise<Statistics> {
 /* ----------------------------- Status ------------------------------ */
 export function getStatus(): Promise<SystemStatus> {
   return apiFetch<SystemStatus>("/status");
+}
+
+/* ------------------------- Video Analysis -------------------------- */
+export async function uploadVideoAnalysis(file: File): Promise<VideoAnalysisJob> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${BASE_URL}/analysis/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`API ${res.status}: ${body || res.statusText}`);
+  }
+  return res.json() as Promise<VideoAnalysisJob>;
+}
+
+export function getAnalysisJobs(limit = 50, offset = 0): Promise<VideoAnalysisJobList> {
+  return apiFetch<VideoAnalysisJobList>(`/analysis/jobs?limit=${limit}&offset=${offset}`);
+}
+
+export function getAnalysisJob(jobId: number): Promise<VideoAnalysisJob> {
+  return apiFetch<VideoAnalysisJob>(`/analysis/jobs/${jobId}`);
 }
