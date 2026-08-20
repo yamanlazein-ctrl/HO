@@ -262,7 +262,7 @@ $previewPy = Join-Path $env:TEMP "ai_littering_preview.py"
 Set-Content -Path $previewPy -Value $previewScript -Encoding UTF8
 & $py $previewPy 2>&1 | Out-Null
 Remove-Item $previewPy -ErrorAction SilentlyContinue
-Write-Status "OK" "Camera positioning" "user confirmed"
+Write-Status "OK" "Camera positioning" "User-confirmed camera positioning"
 
 # ============================================================================
 # STEP 5: AI smoke test (real frames through full pipeline)
@@ -291,8 +291,8 @@ if not cap.isOpened(): print('[ERROR] Camera'); sys.exit(1)
 det = YoloDetector(); det.load()
 mv = MovenetPose(); mv.load()
 tr = BytetrackTracker(); tr.load()
-cfg = PipelineConfig(analysis_fps=30.0)
-cfg.assoc_config.min_persistence = 2
+cfg = PipelineConfig(analysis_fps=10.0)  # production default
+cfg.assoc_config.min_persistence = 3  # production default
 pipe = InferencePipeline(cfg)
 person_ids = set(); stable = True; prev_ids = None
 for i in range(20):
@@ -309,7 +309,10 @@ for i in range(20):
 print('[OK] Camera')
 print('[OK] YOLO')
 print('[OK] ByteTrack')
-print('[%s] Stable Track IDs' % ('OK' if stable else 'WARNING'))
+if not person_ids:
+    print('[ERROR] No persons detected in 20 frames - check camera angle/lighting')
+    sys.exit(1)
+print('[%s] Stable Track IDs (persons: %s)' % ('OK' if stable else 'WARNING', sorted(person_ids)))
 print('[OK] MoveNet')
 print('[OK] Association')
 print('[OK] State Machine')
@@ -330,6 +333,12 @@ if ($smokeOut -match "\[ERROR\]") {
 }
 if ($smokeOut -match "\[WARNING\].*Stable") {
     Write-Status "WARNING" "Tracking stability" "IDs changed across frames - check lighting/angle"
+}
+if ($smokeOut -match "\[ERROR\]") {
+    Write-Host ""
+    Write-Status "ERROR" "AI smoke test" "no persons detected - check camera/lighting"
+    Write-Host "  NOT READY - fix camera angle or lighting before retrying" -ForegroundColor Red
+    exit 1
 }
 
 # ============================================================================
