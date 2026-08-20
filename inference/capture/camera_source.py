@@ -128,17 +128,35 @@ class VideoFileSource:
     and the test dataset (100 clips). Same FramePacket contract.
     """
 
-    def __init__(self, path: str, target_fps: int = 30) -> None:
+    def __init__(self, path: str, target_fps: Optional[int] = None) -> None:
         self.path = path
         self.target_fps = target_fps
         self._cap = None  # cv2.VideoCapture, set in open()
         self._frame_index = 0
         self._start_ts: Optional[float] = None
+        self.total_frames: int = 0
+        self.fps: float = 30.0
+        self.duration_seconds: float = 0.0
+        self.width: int = 0
+        self.height: int = 0
 
     def open(self) -> bool:
         import cv2  # type: ignore
         self._cap = cv2.VideoCapture(self.path)
-        return self._cap.isOpened()
+        if not self._cap.isOpened():
+            return False
+        
+        # Read video metadata
+        cnt = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        orig_fps = float(self._cap.get(cv2.CAP_PROP_FPS))
+        if orig_fps <= 0 or orig_fps > 120 or not (orig_fps == orig_fps):
+            orig_fps = 30.0
+        self.fps = float(self.target_fps) if self.target_fps else orig_fps
+        self.total_frames = max(0, cnt)
+        self.duration_seconds = self.total_frames / self.fps if self.fps > 0 else 0.0
+        self.width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        return True
 
     def read(self) -> Optional[FramePacket]:
         if self._cap is None:
@@ -148,8 +166,8 @@ class VideoFileSource:
             return None
         if self._start_ts is None:
             self._start_ts = time.time()
-        # synthetic wall-clock: advance by frame_index / target_fps
-        ts = self._start_ts + (self._frame_index / max(1, self.target_fps))
+        # synthetic wall-clock: advance by frame_index / fps
+        ts = self._start_ts + (self._frame_index / max(1.0, self.fps))
         h, w = frame.shape[:2]
         pkt = FramePacket(frame=frame, timestamp=ts, frame_index=self._frame_index, width=w, height=h)
         self._frame_index += 1
@@ -158,4 +176,12 @@ class VideoFileSource:
     def release(self) -> None:
         if self._cap is not None:
             self._cap.release()
+            self._cap = None
+
+    def __iter__(self) -> Iterator[FramePacket]:
+        while True:
+            pkt = self.read()
+            if pkt is None:
+                break
+            yield pkt
             self._cap = None
