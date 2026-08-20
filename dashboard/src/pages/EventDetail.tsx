@@ -51,7 +51,7 @@ export function EventDetail() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="mono text-2xl font-bold text-[var(--text-primary)]">Violation #{event.id}</h1>
+            <h1 className="mono text-2xl font-bold text-[var(--text-primary)]">Event #{event.id}</h1>
             <Badge status={event.status} />
           </div>
           <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
@@ -61,7 +61,7 @@ export function EventDetail() {
         {isConfirmed && (
           <div className="flex items-center gap-2 rounded-lg bg-[var(--danger)]/15 px-4 py-2.5">
             <ShieldAlert className="h-5 w-5 text-[var(--danger)]" />
-            <span className="text-[13px] font-bold text-[var(--danger)]">LITTERING CONFIRMED</span>
+            <span className="text-[13px] font-bold text-[var(--danger)]">LITTERING EVENT CANDIDATE</span>
           </div>
         )}
       </div>
@@ -92,9 +92,14 @@ export function EventDetail() {
             </p>
             <EventTimeline satisfied={reasoning} variant="checklist" />
             {isConfirmed && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg bg-[var(--accent)]/10 px-3 py-2">
-                <CheckCircle2 className="h-4 w-4 text-[var(--accent)]" />
-                <span className="text-[12px] font-semibold text-[var(--accent)]">Final Decision: Littering Confirmed</span>
+              <div className="mt-4 flex flex-col gap-2 rounded-lg bg-[var(--accent)]/10 p-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-[var(--accent)]" />
+                  <span className="text-[12px] font-semibold text-[var(--accent)]">Final Decision: Littering Event Candidate</span>
+                </div>
+                <div className="text-[11px] text-[var(--text-secondary)]">
+                  Status: <span className="font-semibold text-[var(--warning)]">REVIEW REQUIRED</span> (Human validation needed before action)
+                </div>
               </div>
             )}
           </div>
