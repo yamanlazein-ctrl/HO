@@ -28,6 +28,7 @@ const GROUPS: NavGroup[] = [
       { to: "/", label: "Dashboard", icon: LayoutDashboard },
       { to: "/cameras", label: "Cameras", icon: Camera },
       { to: "/live", label: "Live Monitoring", icon: MonitorPlay },
+      { to: "/analysis", label: "Video Analysis", icon: FileVideo },
     ],
   },
   {
