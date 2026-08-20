@@ -104,7 +104,7 @@ Write-Host "  Opening Dashboard in browser..." -ForegroundColor Gray
 $dashUrl = "http://localhost:5173"
 
 # Start dashboard dev server in background
-$dashProc = Start-Process powershell -PassThru -ArgumentList "-NoExit", "-Command", "cd dashboard; npx serve dist -l 5173"
+$dashProc = Start-Process powershell -PassThru -ArgumentList "-NoExit", "-Command", "cd dashboard; npm run preview -- --host 0.0.0.0 --port 5173"
 
 # Wait for dashboard to be reachable
 Start-Sleep -Seconds 3

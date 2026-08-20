@@ -513,17 +513,49 @@ try {
     Step-Error "AI import check" "Exception: $_"
 }
 
-# === 27. Smoke test: InferencePipeline ====================================
-try {
-    $env:PYTHONPATH = $PSScriptRoot
-    $smokeOut = & $venvPython -c "from inference.pipeline import InferencePipeline, PipelineConfig; InferencePipeline(PipelineConfig())" | Out-Null 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Step-OK "Inference smoke test" "InferencePipeline(PipelineConfig()) instantiated"
-    } else {
-        Step-Error "Inference smoke test" "Pipeline instantiation failed (exit $LASTEXITCODE)"
-    }
-} catch {
-    Step-Error "Inference smoke test" "Exception: $_"
+# === 27. Real AI Smoke test (YOLO -> ByteTrack -> MoveNet -> Pipeline) ===
+Write-Host "[..] Real AI frame pipeline smoke test..." -ForegroundColor DarkGray
+$smokeScript = @"
+import sys, time
+import numpy as np
+sys.path.insert(0, r'$PSScriptRoot')
+try:
+    from inference.detection.yolo_detector import YoloDetector
+    from inference.tracking.bytetrack_tracker import BytetrackTracker
+    from inference.pose.movenet_pose import MovenetPose
+    from inference.pipeline import InferencePipeline, PipelineConfig
+    from scripts.run_pipeline import build_tracks_real
+    
+    detector = YoloDetector(person_weights=r'$yoloPath', litter_weights=r'$weightsPath')
+    detector.load()
+    tracker = BytetrackTracker()
+    tracker.load()
+    movenet = MovenetPose()
+    movenet.load()
+    
+    cfg = PipelineConfig(analysis_fps=10.0)
+    cfg.assoc_config.min_persistence = 3
+    pipe = InferencePipeline(cfg)
+    
+    # Run test frame through the actual full real pipeline
+    frame = np.full((480, 640, 3), 40, dtype=np.uint8)
+    tracked = detector.track(frame, persist=True)
+    persons, objects = build_tracks_real(frame, tracked, movenet, tracker, 0)
+    pipe.process_frame(frame, time.time(), persons, objects)
+    print('SMOKE_OK')
+except Exception as e:
+    print(f'SMOKE_ERROR:{type(e).__name__}:{e}')
+"@
+$smokePy = Join-Path $env:TEMP "ai_install_smoke.py"
+Set-Content -Path $smokePy -Value $smokeScript -Encoding UTF8
+$env:PYTHONPATH = $PSScriptRoot
+$smokeResult = & $venvPython $smokePy 2>&1
+Remove-Item $smokePy -ErrorAction SilentlyContinue
+
+if ($smokeResult -match "SMOKE_OK") {
+    Step-OK "Real AI Smoke test" "YOLO + ByteTrack + MoveNet + Pipeline processed test frame successfully"
+} else {
+    Step-Error "Real AI Smoke test" "Pipeline execution failed: $smokeResult"
 }
 
 # === 28. Model class validation ===========================================
