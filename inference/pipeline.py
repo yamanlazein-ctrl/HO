@@ -206,42 +206,63 @@ class InferencePipeline:
                     )
                     new_events.append(ev)
                     self.events.append(ev)
-                    self._maybe_post_backend(ev, art)
+                    # DO NOT call _maybe_post_backend here - the MP4 isn't finalized yet.
+                    # The upload happens in step 7 AFTER finalize() completes.
 
-        # 7) finalize pending evidence whose post-window has elapsed
+        # 7) finalize pending evidence whose post-window has elapsed,
+        #    THEN upload to backend (correct order: finalize -> verify -> upload)
         for key in list(self._pending.keys()):
             art = self._pending[key]
             if timestamp - art.request.event_timestamp >= self.config.post_seconds:
-                self.evidence_mgr.finalize(art, self.buffer)
+                # 7a) finalize the evidence (writes the MP4)
+                try:
+                    self.evidence_mgr.finalize(art, self.buffer)
+                except Exception as e:
+                    import logging
+                    logging.getLogger("ai_littering").error(
+                        "Evidence finalize failed for event %s: %s", art.event_id, e
+                    )
+                    del self._pending[key]
+                    continue
+                # 7b) verify the files exist and are valid (non-empty)
+                snap_ok = art.snapshot_path and os.path.exists(art.snapshot_path) and os.path.getsize(art.snapshot_path) > 0
+                vid_ok = art.video_path and os.path.exists(art.video_path) and os.path.getsize(art.video_path) > 0
+                if not snap_ok:
+                    import logging
+                    logging.getLogger("ai_littering").error(
+                        "Evidence snapshot missing or empty for event %s", art.event_id
+                    )
+                if not vid_ok:
+                    import logging
+                    logging.getLogger("ai_littering").warning(
+                        "Evidence video missing or empty for event %s", art.event_id
+                    )
+                # 7c) find the PipelineEvent and upload to backend
+                for ev in self.events:
+                    if ev.event_id == art.event_id:
+                        self._maybe_post_backend(ev, art, snap_ok, vid_ok)
+                        break
                 del self._pending[key]
 
         return new_events
 
-    # ------------------------------------------------------------------ #
-    def _maybe_post_backend(self, event: PipelineEvent, artifact: EvidenceArtifact) -> None:
+    def _maybe_post_backend(self, event: PipelineEvent, artifact: EvidenceArtifact,
+                             snap_ok: bool = True, vid_ok: bool = True) -> None:
+        """Upload event + evidence to the backend AFTER finalize.
+
+        Correct order: CONFIRMED -> create pending -> wait post_seconds -> finalize MP4
+        -> verify files exist -> POST event -> UPLOAD evidence -> dashboard
+
+        Failures are LOGGED, not silently swallowed.
+        """
         url = self.config.post_backend_url
         if not url:
             return
-        # The evidence video is NOT ready yet — finalize() runs after post_seconds
-        # (3s by default). So we must wait for finalize before uploading.
-        # This function is called from process_frame() at confirmation time,
-        # but the video file won't exist until finalize() completes.
-        # Solution: schedule the backend upload AFTER finalize, not before.
         def _post():
             try:
                 import requests  # type: ignore
-                # 1) wait for the evidence video to be finalized
-                #    (poll the video path until it exists or timeout)
-                vid_path = getattr(artifact, "video_path", None)
-                snap_path = getattr(artifact, "snapshot_path", None)
-                video_ready = False
-                if vid_path:
-                    for _ in range(int(self.config.post_seconds * 10) + 10):
-                        if os.path.exists(vid_path):
-                            video_ready = True
-                            break
-                        time.sleep(0.1)
-                # 2) create the event record
+                import logging
+                log = logging.getLogger("ai_littering")
                 payload = {
                     "camera_id": event.camera_id,
                     "person_track_id": str(event.person_track_id),
@@ -251,38 +272,52 @@ class InferencePipeline:
                     "timestamp": event.event_timestamp,
                     "status": "confirmed",
                 }
-                base = url.rsplit("/events", 1)[0]  # tolerate trailing /events
+                base = url.rsplit("/events", 1)[0]
                 resp = requests.post(f"{base}/events", json=payload, timeout=3)
                 if resp.status_code != 201:
-                    return  # event creation failed; can't upload evidence without an event id
+                    log.error("Backend event creation failed: HTTP %s", resp.status_code)
+                    return
                 event_db_id = resp.json().get("id")
                 if event_db_id is None:
+                    log.error("Backend event creation returned no id")
                     return
-                # 3) upload the evidence files (snapshot + video) to the backend
-                #    ONLY after the video is finalized
-                if snap_path and os.path.exists(snap_path):
-                    if video_ready and vid_path and os.path.exists(vid_path):
+                snap_path = getattr(artifact, "snapshot_path", None)
+                vid_path = getattr(artifact, "video_path", None)
+                if snap_ok and snap_path and os.path.exists(snap_path):
+                    if vid_ok and vid_path and os.path.exists(vid_path):
                         with open(snap_path, "rb") as sf, open(vid_path, "rb") as vf:
                             files = {
                                 "snapshot": ("snapshot.jpg", sf, "image/jpeg"),
                                 "video": ("evidence.mp4", vf, "video/mp4"),
                             }
                             data = {"duration_sec": str(artifact.duration_seconds)}
-                            requests.post(
+                            r = requests.post(
                                 f"{base}/evidence/{event_db_id}/upload",
                                 files=files, data=data, timeout=10,
                             )
+                            if r.status_code != 201:
+                                log.error("Evidence upload failed: HTTP %s", r.status_code)
+                            else:
+                                log.info("Evidence uploaded for event %s (snapshot+video)", event_db_id)
                     else:
-                        # video not ready — upload snapshot only, flag missing video
                         with open(snap_path, "rb") as sf:
                             files = {"snapshot": ("snapshot.jpg", sf, "image/jpeg")}
                             data = {"duration_sec": str(artifact.duration_seconds)}
-                            requests.post(
+                            r = requests.post(
                                 f"{base}/evidence/{event_db_id}/upload",
                                 files=files, data=data, timeout=10,
                             )
-            except Exception:
-                pass  # backend optional; live pipeline must not depend on it
+                            if r.status_code != 201:
+                                log.error("Evidence upload (snapshot only) failed: HTTP %s", r.status_code)
+                            else:
+                                log.warning("Evidence uploaded for event %s (snapshot only, video missing)", event_db_id)
+                else:
+                    log.error("No snapshot to upload for event %s", event_db_id)
+            except Exception as e:
+                import logging
+                logging.getLogger("ai_littering").error(
+                    "Backend upload failed for event %s: %s", event.event_id, e
+                )
         threading.Thread(target=_post, daemon=True).start()
 
     def push_status(self, timestamp: float, capture_fps: Optional[float] = None,
