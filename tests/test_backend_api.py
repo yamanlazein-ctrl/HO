@@ -88,6 +88,10 @@ Base.metadata.create_all(bind=engine)
 # in-memory engine instead of the real (PostgreSQL) one.
 app.dependency_overrides[get_db] = override_get_db
 
+# Also override get_session_factory in database module so background tasks use in-memory engine
+from backend import database
+database.get_session_factory = lambda: TestingSessionLocal
+
 
 @pytest.fixture(autouse=True)
 def _reset_tables():
@@ -578,3 +582,50 @@ def test_pipeline_push_status_reflects_in_endpoint(client: TestClient):
         assert body["processing"]["latency_ms"] == 35.0
     finally:
         status_router.reset_status()
+
+
+# =========================================================================== #
+# Video Analysis Endpoints
+# =========================================================================== #
+def test_video_analysis_endpoints(client: TestClient):
+    """Test the /api/analysis/jobs listing, upload rejection of invalid files, and single job query."""
+    import io
+    # 1. list jobs
+    r_list = client.get("/api/analysis/jobs")
+    assert r_list.status_code == 200
+    assert "items" in r_list.json()
+    assert "total" in r_list.json()
+
+    # 2. upload invalid format -> 400
+    bad_file = io.BytesIO(b"not a video")
+    r_bad = client.post(
+        "/api/analysis/upload",
+        files={"file": ("test.txt", bad_file, "text/plain")}
+    )
+    assert r_bad.status_code == 400
+    assert "Unsupported video format" in r_bad.json()["detail"]
+
+    # 3. upload empty video -> 400
+    empty_file = io.BytesIO(b"")
+    r_empty = client.post(
+        "/api/analysis/upload",
+        files={"file": ("empty.mp4", empty_file, "video/mp4")}
+    )
+    assert r_empty.status_code == 400
+    assert "empty" in r_empty.json()["detail"].lower()
+
+    # 4. upload valid dummy MP4 -> 201 queued job
+    dummy_mp4 = io.BytesIO(b"\x00\x00\x00\x1cftypisom\x00\x00\x02\x00isomiso2mp41")
+    r_upload = client.post(
+        "/api/analysis/upload",
+        files={"file": ("test_run.mp4", dummy_mp4, "video/mp4")}
+    )
+    assert r_upload.status_code == 201
+    job_id = r_upload.json()["id"]
+    assert r_upload.json()["original_filename"] == "test_run.mp4"
+    assert r_upload.json()["status"] in ["queued", "processing", "completed", "failed"]
+
+    # 5. get job details
+    r_job = client.get(f"/api/analysis/jobs/{job_id}")
+    assert r_job.status_code == 200
+    assert r_job.json()["id"] == job_id
