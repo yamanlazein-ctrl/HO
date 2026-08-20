@@ -1,0 +1,45 @@
+name: Linux Logic CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  logic-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install lightweight test deps (no torch/cv2/tensorflow — logic tests are pure)
+        run: |
+          pip install fastapi sqlalchemy pydantic pydantic-settings python-multipart httpx pytest "setuptools<81"
+
+      - name: Run logic + backend tests (no CV deps needed)
+        env:
+          DATABASE_URL: 'sqlite:///:memory:'
+          PYTHONPATH: .
+        run: |
+          python -m pytest tests/ -q --tb=short \
+            --ignore=tests/test_bytetrack_integration.py \
+            --ignore=tests/test_real_video_demo.py
+
+      - name: Verify inference imports cleanly without heavy deps
+        env:
+          PYTHONPATH: .
+        run: |
+          python -c "from inference.pipeline import InferencePipeline, PipelineConfig; InferencePipeline(PipelineConfig())"
+          python -c "from backend.main import app; print('backend OK')"
+
+      - name: Check environment (honest report)
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/check_environment.py || true
+          # check_environment exits non-zero on missing best.pt/cv2 — that's expected on Linux CI without models
