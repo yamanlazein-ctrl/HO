@@ -9,7 +9,7 @@ import type { Camera as CameraType } from "../types";
 
 export function LiveMonitoring() {
   const { data: cameras } = useFetch(getCameras, []);
-  const { data: status } = useFetch(getStatus, []);
+  const { data: status } = useFetch(getStatus, [], 1500);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const cam: CameraType | undefined = cameras?.find((c) => c.id === selectedId) ?? cameras?.[0];
@@ -45,8 +45,8 @@ export function LiveMonitoring() {
             <LiveCamera
               cameraId={cam.id}
               cameraName={`${cam.name} · ${cam.location}`}
-              aiState={undefined}
-              entities={[]}
+              aiState={status?.live_state?.ai_state}
+              entities={status?.live_state?.entities || []}
             />
           ) : (
             <div className="panel flex aspect-video flex-col items-center justify-center">
@@ -71,7 +71,7 @@ export function LiveMonitoring() {
             <p className="mb-4 text-[11px] text-[var(--text-muted)]">
               The temporal state machine advances through this sequence to confirm a littering event.
             </p>
-            <EventTimeline currentState={undefined} variant="timeline" />
+            <EventTimeline currentState={status?.live_state?.ai_state} variant="timeline" />
           </div>
 
           <div className="panel p-4">
