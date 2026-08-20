@@ -416,7 +416,7 @@ try {
     if ($LASTEXITCODE -eq 0) {
         Step-OK "DB schema init" "Tables created (or already existed)"
     } else {
-        Step-Warn "DB schema init" "create_all() returned exit $LASTEXITCODE - DB may be offline; tests use SQLite fallback"
+        Step-Error "DB schema init" "create_all() failed - PostgreSQL is required for the final demo. Start Docker Desktop and re-run."
     }
 } catch {
     Step-Warn "DB schema init" "Exception: $_ - DB may be offline"
@@ -463,7 +463,7 @@ finally {
 if ($healthOk) {
     Step-OK "Backend health check" "GET /health returned status=ok"
 } else {
-    Step-Warn "Backend health check" "Could not reach /health - backend may need DB. Check logs: $env:TEMP\uvicorn_err.log"
+    Step-Error "Backend health check" "Could not reach /health - backend needs PostgreSQL. Check logs: $env:TEMP\uvicorn_err.log"
 }
 
 # === 24. Frontend build ===================================================
