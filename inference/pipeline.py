@@ -222,12 +222,26 @@ class InferencePipeline:
         url = self.config.post_backend_url
         if not url:
             return
-        # fire-and-forget on a thread so a slow backend doesn't stall the loop
+        # The evidence video is NOT ready yet — finalize() runs after post_seconds
+        # (3s by default). So we must wait for finalize before uploading.
+        # This function is called from process_frame() at confirmation time,
+        # but the video file won't exist until finalize() completes.
+        # Solution: schedule the backend upload AFTER finalize, not before.
         def _post():
             try:
                 import requests  # type: ignore
-                # 1) create the event record — track ids are int on the pipeline side;
-                #    the backend schema accepts str, Pydantic coerces. Send as-is.
+                # 1) wait for the evidence video to be finalized
+                #    (poll the video path until it exists or timeout)
+                vid_path = getattr(artifact, "video_path", None)
+                snap_path = getattr(artifact, "snapshot_path", None)
+                video_ready = False
+                if vid_path:
+                    for _ in range(int(self.config.post_seconds * 10) + 10):
+                        if os.path.exists(vid_path):
+                            video_ready = True
+                            break
+                        time.sleep(0.1)
+                # 2) create the event record
                 payload = {
                     "camera_id": event.camera_id,
                     "person_track_id": str(event.person_track_id),
@@ -244,46 +258,64 @@ class InferencePipeline:
                 event_db_id = resp.json().get("id")
                 if event_db_id is None:
                     return
-                # 2) upload the evidence files (snapshot + video) to the backend so the
-                #    dashboard's EvidenceViewer can display them. Without this step the
-                #    event row exists but EvidenceViewer always shows "No evidence".
-                snap_path = getattr(artifact, "snapshot_path", None)
-                vid_path = getattr(artifact, "video_path", None)
-                if snap_path and os.path.exists(snap_path) and vid_path and os.path.exists(vid_path):
-                    with open(snap_path, "rb") as sf, open(vid_path, "rb") as vf:
-                        files = {
-                            "snapshot": ("snapshot.jpg", sf, "image/jpeg"),
-                            "video": ("evidence.mp4", vf, "video/mp4"),
-                        }
-                        data = {"duration_sec": str(artifact.duration_seconds)}
-                        requests.post(
-                            f"{base}/evidence/{event_db_id}/upload",
-                            files=files, data=data, timeout=10,
-                        )
+                # 3) upload the evidence files (snapshot + video) to the backend
+                #    ONLY after the video is finalized
+                if snap_path and os.path.exists(snap_path):
+                    if video_ready and vid_path and os.path.exists(vid_path):
+                        with open(snap_path, "rb") as sf, open(vid_path, "rb") as vf:
+                            files = {
+                                "snapshot": ("snapshot.jpg", sf, "image/jpeg"),
+                                "video": ("evidence.mp4", vf, "video/mp4"),
+                            }
+                            data = {"duration_sec": str(artifact.duration_seconds)}
+                            requests.post(
+                                f"{base}/evidence/{event_db_id}/upload",
+                                files=files, data=data, timeout=10,
+                            )
+                    else:
+                        # video not ready — upload snapshot only, flag missing video
+                        with open(snap_path, "rb") as sf:
+                            files = {"snapshot": ("snapshot.jpg", sf, "image/jpeg")}
+                            data = {"duration_sec": str(artifact.duration_seconds)}
+                            requests.post(
+                                f"{base}/evidence/{event_db_id}/upload",
+                                files=files, data=data, timeout=10,
+                            )
             except Exception:
                 pass  # backend optional; live pipeline must not depend on it
         threading.Thread(target=_post, daemon=True).start()
 
-    def push_status(self, timestamp: float, capture_fps: Optional[float] = None) -> None:
+    def push_status(self, timestamp: float, capture_fps: Optional[float] = None,
+                     analysis_fps_actual: Optional[float] = None,
+                     inference_latency_ms: Optional[float] = None,
+                     source_type: str = "camo") -> None:
         """Push live pipeline metrics to the backend /api/status singleton.
 
         Called from run_pipeline.py each stats tick so the dashboard's status
         bar reflects the real AI engine + camera + processing state. If the
         backend status router is not importable (e.g. backend not installed),
-        this is a no-op — the live pipeline must not depend on the backend.
+        this is a no-op - the live pipeline must not depend on the backend.
+
+        Metrics are SEPARATED honestly:
+          - capture_fps: how fast the camera delivers frames (NOT AI speed)
+          - analysis_fps_actual: how fast the AI pipeline actually processes
+          - inference_latency_ms: measured end-to-end per-frame latency
+          - source_type: actual source (camo / file / webcam)
         """
         try:
             from backend.routers.status import set_status
         except Exception:
             return
         st = self.stats()
+        # if no actual analysis FPS measured, fall back to config (honest: not real)
+        proc_fps = analysis_fps_actual if analysis_fps_actual is not None else None
         set_status(
             ai_engine={"status": "online", "model_loaded": True, "classes": []},
-            camera={"status": "online", "fps": capture_fps, "resolution": None, "source": "camo"},
+            camera={"status": "online", "fps": capture_fps, "resolution": None, "source": source_type},
             processing={
-                "fps": capture_fps,
-                "latency_ms": max(0.0, 1000.0 / max(1e-6, self.config.analysis_fps)),
-                "analysis_fps": self.config.analysis_fps,
+                "fps": proc_fps,  # actual measured AI FPS, NOT capture FPS
+                "latency_ms": inference_latency_ms,  # measured, NOT 1000/analysis_fps
+                "analysis_fps": self.config.analysis_fps,  # configured target
             },
             buffer={
                 "window_seconds": self.config.buffer_seconds,

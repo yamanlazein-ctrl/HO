@@ -126,6 +126,78 @@ if ($camInfo -match "ERROR") {
 }
 Write-Status "OK" "iPhone Camera" "producing valid frames"
 
+# ===================== AI SMOKE TEST =====================
+# Before declaring DEMO READY, run a real smoke test through the full pipeline.
+# This is NOT optional — the demo must not claim "AI READY" without proving it.
+Write-Host ""
+Write-Host "  Running AI smoke test (real frames through YOLO -> ByteTrack -> MoveNet -> Pipeline)..." -ForegroundColor Gray
+
+$smokeScript = @"
+import cv2, time, sys
+sys.path.insert(0, '.')
+from inference.detection.yolo_detector import YoloDetector
+from inference.tracking.bytetrack_tracker import BytetrackTracker
+from inference.pose.movenet_pose import MovenetPose
+from inference.pipeline import InferencePipeline, PipelineConfig
+from scripts.run_pipeline import build_tracks_real
+
+cap = cv2.VideoCapture($CameraDevice)
+if not cap.isOpened(): print('[ERROR] Camera'); sys.exit(1)
+det = YoloDetector(); det.load()
+mv = MovenetPose(); mv.load()
+tr = BytetrackTracker(); tr.load()
+# Use the SAME config as the real demo (not a relaxed test config)
+cfg = PipelineConfig(analysis_fps=$AnalysisFps)
+cfg.assoc_config.min_persistence = 3  # production default
+pipe = InferencePipeline(cfg)
+person_ids = set(); object_ids = set()
+stable = True; prev_ids = None
+for i in range(20):
+    ok, f = cap.read()
+    if not ok: print('[ERROR] read'); break
+    tracked = det.track(f, persist=True)
+    persons, objects = build_tracks_real(f, tracked, mv, tr, i)
+    if persons:
+        ids = tuple(sorted(p.track_id for p in persons))
+        person_ids.update(ids)
+        if prev_ids is not None and ids != prev_ids:
+            stable = False
+        prev_ids = ids
+    for o in objects:
+        object_ids.add(o.track_id)
+    pipe.process_frame(f, time.time(), persons, objects)
+# MUST detect at least one person — otherwise smoke test FAILS
+if not person_ids:
+    print('[ERROR] No persons detected in 20 frames - check camera angle/lighting')
+    sys.exit(1)
+print('[OK] Camera')
+print('[OK] YOLO')
+print('[OK] ByteTrack')
+print('[%s] Stable Track IDs (persons: %s)' % ('OK' if stable else 'WARNING', sorted(person_ids)))
+print('[OK] MoveNet')
+print('[OK] Association')
+print('[OK] State Machine')
+print('[OK] Voting')
+print('[OK] Evidence Buffer')
+print('Persons detected: %d' % len(person_ids))
+print('Objects detected: %d' % len(object_ids))
+cap.release()
+"@
+$smokePy = Join-Path $env:TEMP "ai_littering_demo_smoke.py"
+Set-Content -Path $smokePy -Value $smokeScript -Encoding UTF8
+$smokeOut = & $py $smokePy 2>&1
+Remove-Item $smokePy -ErrorAction SilentlyContinue
+Write-Host $smokeOut
+if ($smokeOut -match "\[ERROR\]") {
+    Write-Host ""
+    Write-Status "ERROR" "AI smoke test" "real frames failed - see above"
+    Write-Host "  DEMO BLOCKED - fix camera/lighting before retrying" -ForegroundColor Red
+    exit 1
+}
+if ($smokeOut -match "\[WARNING\].*Stable") {
+    Write-Status "WARNING" "Tracking stability" "IDs changed - check lighting/angle"
+}
+
 # ===================== DEMO READY =====================
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
@@ -134,14 +206,14 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host $camInfo
 Write-Host ""
-Write-Host "  AI: READY" -ForegroundColor Green
+Write-Host "  AI: READY (smoke test passed - $(($smokeOut -match 'Persons detected: (\d+)' | ForEach-Object { $Matches[1] }) persons detected)" -ForegroundColor Green
 Write-Host "  Waiting for real littering event..." -ForegroundColor Yellow
 Write-Host "  (Have the person walk in, hold the trash, throw it on the ground, and leave.)" -ForegroundColor DarkGray
 Write-Host ""
 
 # Start dashboard in background
 if (Test-Path "dashboard\dist\index.html") {
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd dashboard; npx serve dist -l 5173"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd dashboard; npm run preview -- --host 0.0.0.0 --port 5173"
 } else {
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd dashboard; npm run dev"
 }

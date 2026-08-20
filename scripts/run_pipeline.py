@@ -84,7 +84,7 @@ def build_tracks(frame, detections, yolo, movenet, tracker_ns, namespace_offset)
 def main():
     ap = argparse.ArgumentParser(description="Run AI Littering Detection pipeline")
     ap.add_argument("--source", choices=["camo", "file"], default="camo")
-    ap.add_argument("--device", type=int, default=0, help="OpenCV device index (Camo/Iriun)")
+    ap.add_argument("--device", type=int, default=-1, help="OpenCV device index (-1 = auto-discover via camera_discovery)")
     ap.add_argument("--video", type=str, default="", help="path for --source file")
     ap.add_argument("--buffer", type=float, default=6.0, help="circular buffer window (s)")
     ap.add_argument("--analysis-fps", type=float, default=10.0)
@@ -107,7 +107,23 @@ def main():
 
     # source
     if args.source == "camo":
-        src = CameraSource(device_index=args.device, target_fps=30)
+        device_idx = args.device
+        if device_idx < 0:
+            # auto-discover: find a LIVE camera via camera_discovery
+            try:
+                from scripts.camera_discovery import discover_cameras
+                cams = discover_cameras(max_idx=5, probe_frames=8)
+                live = [c for c in cams if c.status == "LIVE"]
+                if live:
+                    device_idx = live[0].index
+                    print(f"Auto-discovered LIVE camera at index {device_idx}")
+                else:
+                    print("ERROR: no LIVE camera found - connect iPhone via Camo and re-run", file=sys.stderr)
+                    sys.exit(1)
+            except Exception as e:
+                print(f"ERROR: camera discovery failed: {e}", file=sys.stderr)
+                sys.exit(1)
+        src = CameraSource(device_index=device_idx, target_fps=30)
     else:
         src = VideoFileSource(args.video)
     if not src.open():
@@ -117,7 +133,12 @@ def main():
     # CV components (lazy-loaded; needs laptop deps)
     detector = YoloDetector()
     detector.load()
-    print(f"YOLO loaded. Litter classes: {detector.litter_classes}")
+    if detector.litter_classes:
+        print(f"YOLO loaded. Litter classes: {detector.litter_classes}")
+    else:
+        print("YOLO loaded. Litter model (best.pt) NOT found.")
+        print("  FALLBACK MODE: using COCO classes (bottle, cup, ...) - NOT the final litter model.")
+        print("  For the final demo, place best.pt at inference/detection/weights/best.pt")
     movenet = MovenetPose()
     movenet.load()
     tracker_ns = BytetrackTracker()

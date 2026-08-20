@@ -319,7 +319,7 @@ best.pt is MISSING - this model is REQUIRED for litter detection.
 
   HOW TO GET IT:
     1. Clone the reference repo: Anti-Littering-System-Computer-Vision (MIT)
-       git clone https://github.com/<reference-repo>/Anti-Littering-System-Computer-Vision.git
+       git clone https://github.com/ananya868/Anti-Littering-System-Computer-Vision.git
     2. Locate best.pt inside that repo (usually in a /weights or /models folder).
     3. Copy it to:
        inference/detection/weights/best.pt
