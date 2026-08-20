@@ -323,7 +323,8 @@ class InferencePipeline:
     def push_status(self, timestamp: float, capture_fps: Optional[float] = None,
                      analysis_fps_actual: Optional[float] = None,
                      inference_latency_ms: Optional[float] = None,
-                     source_type: str = "camo") -> None:
+                     source_type: str = "camo",
+                     live_entities: Optional[List[dict]] = None) -> None:
         """Push live pipeline metrics to the backend /api/status singleton.
 
         Called from run_pipeline.py each stats tick so the dashboard's status
@@ -336,13 +337,21 @@ class InferencePipeline:
           - analysis_fps_actual: how fast the AI pipeline actually processes
           - inference_latency_ms: measured end-to-end per-frame latency
           - source_type: actual source (camo / file / webcam)
+          - live_entities: bounding boxes and track state for live dashboard view
         """
         try:
             from backend.routers.status import set_status
         except Exception:
             return
         st = self.stats()
-        # if no actual analysis FPS measured, fall back to config (honest: not real)
+        # Find highest priority current AI state among all active FSMs
+        current_ai_state = "UNKNOWN"
+        for fsm in self._fsms.values():
+            if fsm.state.name != "UNKNOWN":
+                current_ai_state = fsm.state.name
+                if current_ai_state == "LITTERING_CONFIRMED":
+                    break
+
         proc_fps = analysis_fps_actual if analysis_fps_actual is not None else None
         set_status(
             ai_engine={"status": "online", "model_loaded": True, "classes": []},
@@ -356,6 +365,11 @@ class InferencePipeline:
                 "window_seconds": self.config.buffer_seconds,
                 "frames_buffered": st["frames_buffered"],
                 "buffer_duration": st["buffer_duration"],
+            },
+            live_state={
+                "ai_state": current_ai_state,
+                "active_pairs": len(self._fsms),
+                "entities": live_entities or [],
             },
         )
 
