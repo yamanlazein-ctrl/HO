@@ -168,9 +168,12 @@ def main():
 
     frame_count = 0
     t0 = time.time()
+    last_infer_time = 0.0
     try:
         for pkt in src:
             _latest_frame[0] = pkt.frame  # expose to the backend stream router
+            t_start = time.time()
+            
             # REAL ByteTrack path: detector.track() returns TrackedDetection
             # objects with stable ids (persist=True keeps tracker state).
             tracked = detector.track(pkt.frame, persist=True)
@@ -178,6 +181,8 @@ def main():
                 pkt.frame, tracked, movenet, tracker_ns, frame_count,
             )
             events = pipe.process_frame(pkt.frame, pkt.timestamp, persons, objects)
+            last_infer_time = (time.time() - t_start) * 1000.0
+
             for ev in events:
                 print(f"[{ev.event_timestamp:.2f}] 🚨 LITTERING CONFIRMED — {ev.object_type} "
                       f"person={ev.person_track_id} object={ev.object_track_id} conf={ev.confidence:.2f}")
@@ -186,13 +191,44 @@ def main():
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
             frame_count += 1
+            
+            # Push live state every 5 frames for responsive real-time UI
+            if frame_count % 5 == 0:
+                h_img, w_img = pkt.frame.shape[:2]
+                entities = []
+                for p in persons:
+                    x1, y1, x2, y2 = p.bbox
+                    entities.append({
+                        "trackId": p.track_id,
+                        "label": "Person",
+                        "bbox": {"x": x1/w_img, "y": y1/h_img, "w": (x2-x1)/w_img, "h": (y2-y1)/h_img},
+                        "confidence": 0.90,
+                        "isPerson": True
+                    })
+                for o in objects:
+                    x1, y1, x2, y2 = o.bbox
+                    entities.append({
+                        "trackId": o.track_id,
+                        "label": o.class_name,
+                        "bbox": {"x": x1/w_img, "y": y1/h_img, "w": (x2-x1)/w_img, "h": (y2-y1)/h_img},
+                        "confidence": 0.85,
+                        "isPerson": False
+                    })
+                
+                fps = frame_count / max(1e-6, time.time() - t0)
+                pipe.push_status(
+                    pkt.timestamp,
+                    capture_fps=fps,
+                    analysis_fps_actual=min(fps, args.analysis_fps),
+                    inference_latency_ms=last_infer_time,
+                    source_type=args.source,
+                    live_entities=entities
+                )
+
             if frame_count % 100 == 0:
                 st = pipe.stats()
                 fps = frame_count / max(1e-6, time.time() - t0)
-                print(f"[stats] {st} capture_fps={fps:.1f}")
-                # push live metrics to the backend /api/status so the dashboard
-                # status bar reflects the real AI engine + camera state
-                pipe.push_status(pkt.timestamp, capture_fps=fps)
+                print(f"[stats] {st} capture_fps={fps:.1f} latency={last_infer_time:.1f}ms")
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
