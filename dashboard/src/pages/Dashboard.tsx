@@ -7,6 +7,8 @@ import {
   TrendingUp,
   Video,
   Cpu,
+  Upload,
+  Smartphone
 } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { getCameras, getEvents, getStatistics, getStatus } from "../lib/api";
@@ -27,11 +29,29 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 p-5 lg:p-7">
-      <div>
-        <h1 className="text-xl font-bold text-[var(--text-primary)]">Dashboard</h1>
-        <p className="mt-0.5 text-[13px] text-[var(--text-secondary)]">
-          Real-time AI littering detection & evidence collection
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-[var(--text-primary)]">Command Center Dashboard</h1>
+          <p className="mt-0.5 text-[13px] text-[var(--text-secondary)]">
+            Real-time dual-input AI littering analysis & video evidence surveillance
+          </p>
+        </div>
+
+        {/* Dual Mode Quick Actions */}
+        <div className="flex items-center gap-3">
+          <Link
+            to="/cameras"
+            className="flex items-center gap-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-default)] px-3.5 py-2 text-xs font-bold text-[var(--text-primary)] hover:border-[var(--accent)] transition-all"
+          >
+            <Smartphone className="h-4 w-4 text-[var(--accent)]" /> Connect Camera
+          </Link>
+          <Link
+            to="/analysis"
+            className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-black hover:bg-[var(--accent-dim)] transition-all"
+          >
+            <Upload className="h-4 w-4 text-black" /> Upload Video Analysis
+          </Link>
+        </div>
       </div>
 
       {/* Status area */}
@@ -65,12 +85,20 @@ export function Dashboard() {
               entities={status?.live_state?.entities || []}
             />
           ) : (
-            <div className="panel flex aspect-video flex-col items-center justify-center">
-              <Camera className="h-10 w-10 text-[var(--text-muted)]" />
-              <p className="mt-3 text-[13px] text-[var(--text-secondary)]">No cameras registered</p>
-              <Link to="/cameras" className="mt-2 text-[12px] font-semibold text-[var(--accent)] hover:underline">
-                Add a camera →
-              </Link>
+            <div className="panel flex aspect-video flex-col items-center justify-center p-6 text-center">
+              <Camera className="h-10 w-10 text-[var(--text-muted)] mb-3" />
+              <p className="text-sm font-semibold text-[var(--text-primary)]">No Active Camera Feed</p>
+              <p className="text-xs text-[var(--text-muted)] max-w-sm mt-1">
+                You can connect your iPhone via Camo or directly upload recorded video files for full AI analysis.
+              </p>
+              <div className="flex items-center gap-3 mt-4">
+                <Link to="/cameras" className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-default)] px-3 py-1.5 text-xs font-semibold text-[var(--text-primary)] hover:border-[var(--accent)]">
+                  Connect Phone →
+                </Link>
+                <Link to="/analysis" className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-black hover:bg-[var(--accent-dim)]">
+                  Analyze Video File →
+                </Link>
+              </div>
             </div>
           )}
 
@@ -92,7 +120,7 @@ export function Dashboard() {
         {/* Side: recent violations */}
         <div className="panel flex flex-col">
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-            <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Recent Violations</h2>
+            <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Recent Event Candidates</h2>
             <Link to="/violations" className="text-[11px] font-semibold text-[var(--accent)] hover:underline">
               View all
             </Link>
