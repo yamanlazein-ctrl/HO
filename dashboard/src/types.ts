@@ -44,6 +44,32 @@ export interface Statistics {
   avg_confidence: number;
 }
 
+export interface VideoAnalysisJob {
+  id: number;
+  filename: string;
+  original_filename: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  duration_sec: number | null;
+  total_frames: number | null;
+  processed_frames: number;
+  fps: number | null;
+  processing_fps: number | null;
+  events_count: number;
+  persons_detected: number;
+  objects_detected: number;
+  report_json: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface VideoAnalysisJobList {
+  items: VideoAnalysisJob[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export type EventStatus = "new" | "reviewing" | "confirmed" | "rejected";
 
 // /api/status — the live system status bar payload
