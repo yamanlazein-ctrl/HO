@@ -18,9 +18,9 @@ import type { Event } from "../types";
 
 export function Dashboard() {
   const { data: cameras } = useFetch(getCameras, []);
-  const { data: eventsList } = useFetch(() => getEvents(8, 0), []);
-  const { data: stats } = useFetch(getStatistics, []);
-  const { data: status } = useFetch(getStatus, []);
+  const { data: eventsList } = useFetch(() => getEvents(8, 0), [], 3000);
+  const { data: stats } = useFetch(getStatistics, [], 5000);
+  const { data: status } = useFetch(getStatus, [], 2000);
 
   const events: Event[] = eventsList?.items ?? [];
   const primaryCam = cameras?.[0];
@@ -61,8 +61,8 @@ export function Dashboard() {
             <LiveCamera
               cameraId={primaryCam.id}
               cameraName={primaryCam.name}
-              aiState={undefined}
-              entities={[]}
+              aiState={status?.live_state?.ai_state}
+              entities={status?.live_state?.entities || []}
             />
           ) : (
             <div className="panel flex aspect-video flex-col items-center justify-center">
