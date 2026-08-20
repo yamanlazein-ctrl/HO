@@ -8,7 +8,7 @@ import { formatTime } from "../lib/utils";
 
 export function EvidencePage() {
   const [search, setSearch] = useState("");
-  const { data: eventsList } = useFetch(() => getEvents(100, 0), []);
+  const { data: eventsList } = useFetch(() => getEvents(100, 0), [], 4000);
 
   const events = eventsList?.items ?? [];
 
