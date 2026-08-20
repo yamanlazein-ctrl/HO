@@ -6,14 +6,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import create_all
-from backend.routers import cameras, events, evidence, statistics, status, stream
+from backend.routers import analysis, cameras, events, evidence, statistics, status, stream
 
 app = FastAPI(
     title="AI Littering Detection API",
     description=(
         "Backend API for the AI-Based CCTV Littering Detection and Evidence "
-        "System. Exposes cameras, littering events, evidence uploads, and "
-        "aggregate statistics."
+        "System. Exposes cameras, littering events, evidence uploads, "
+        "video file analysis, and aggregate statistics."
     ),
     version="1.0.0",
 )
@@ -31,6 +31,7 @@ app.add_middleware(
 # --------------------------------------------------------------------------- #
 # Routers (mounted under /api)
 # --------------------------------------------------------------------------- #
+app.include_router(analysis.router, prefix="/api")
 app.include_router(cameras.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(evidence.router, prefix="/api")
