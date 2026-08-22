@@ -89,7 +89,11 @@ def _run_video_analysis_job(job_id: int):
             buffer_seconds=6.0,
             analysis_fps=10.0,
             camera_id=str(cam.id),
-            post_backend_url="http://localhost:8000/api/events"
+            # The job runs INSIDE the backend process and persists events +
+            # evidence directly to the DB below (finalize -> verify -> create
+            # event -> store files). An HTTP self-call would be fragile and
+            # is unnecessary here. Live-camera mode keeps the HTTP path.
+            post_backend_url=None,
         )
         pipe = InferencePipeline(pipeline_cfg)
 
@@ -136,6 +140,74 @@ def _run_video_analysis_job(job_id: int):
 
         source.release()
 
+        # ------------------------------------------------------------------
+        # Persist confirmed candidates: finalize -> verify -> create event
+        # -> store evidence files -> (retrievable via /api/evidence/*).
+        # The pipeline already finalized + verified each artifact's files
+        # during the frame loop; pipe.finalized_artifacts holds only the
+        # artifacts whose snapshot/video exist and are non-empty.
+        # ------------------------------------------------------------------
+        from backend.routers.evidence import EVIDENCE_STORE
+
+        created_event_ids = []
+        for ev in pipe.events:
+            art = pipe.finalized_artifacts.get(ev.event_id)
+            if art is None:
+                log.warning(
+                    "Job %s: event %s has no verified evidence artifact — "
+                    "skipping DB persistence", job.id, ev.event_id
+                )
+                continue
+            snap_path = art.snapshot_path
+            vid_path = art.video_path
+            snap_ok = snap_path and os.path.exists(snap_path) and os.path.getsize(snap_path) > 0
+            vid_ok = vid_path and os.path.exists(vid_path) and os.path.getsize(vid_path) > 0
+            if not snap_ok:
+                log.error("Job %s: snapshot missing/empty for %s", job.id, ev.event_id)
+                continue
+
+            # 1) create the backend Event row
+            db_event = models.Event(
+                camera_id=cam.id,
+                person_track_id=str(ev.person_track_id),
+                object_track_id=str(ev.object_track_id),
+                object_type=ev.object_type,
+                confidence=float(ev.confidence),
+                timestamp=datetime.now(timezone.utc),
+                status="confirmed",
+            )
+            db.add(db_event)
+            db.commit()
+            db.refresh(db_event)
+            created_event_ids.append(db_event.id)
+
+            # 2) copy evidence files into the backend evidence store and
+            #    create the Evidence row so the dashboard can play them.
+            target_dir = EVIDENCE_STORE / str(db_event.id)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            rel_snapshot = rel_video = None
+            if snap_ok:
+                dst_snap = target_dir / f"snapshot_{db_event.id}.jpg"
+                shutil.copyfile(snap_path, dst_snap)
+                rel_snapshot = str(dst_snap.relative_to(EVIDENCE_STORE))
+            if vid_ok:
+                dst_vid = target_dir / f"evidence_{db_event.id}.mp4"
+                shutil.copyfile(vid_path, dst_vid)
+                rel_video = str(dst_vid.relative_to(EVIDENCE_STORE))
+            db_evidence = models.Evidence(
+                event_id=db_event.id,
+                image_path=rel_snapshot,
+                video_path=rel_video,
+                duration_sec=art.duration_seconds,
+            )
+            db.add(db_evidence)
+            db.commit()
+            log.info(
+                "Job %s: persisted event #%d (%s) with evidence%s",
+                job.id, db_event.id, ev.object_type,
+                " (snapshot+video)" if (snap_ok and vid_ok) else " (snapshot only)",
+            )
+
         # Finalize
         elapsed = max(1e-6, time.time() - t_start)
         job.processed_frames = frame_idx
@@ -156,6 +228,7 @@ def _run_video_analysis_job(job_id: int):
             "persons_count": len(detected_persons_set),
             "objects_count": len(detected_objects_set),
             "confirmed_events": len(pipe.events),
+            "persisted_event_ids": created_event_ids,
             "timeline": history_timeline,
             "diagnosis": {
                 "yolo_person": "PASS" if detected_persons_set else "FAIL",

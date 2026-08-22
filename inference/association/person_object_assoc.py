@@ -78,9 +78,15 @@ class Track:
 @dataclass
 class AssociationConfig:
     # Classes eligible to be a litter candidate object
+    # NOTE: must cover ALL classes of the production litter model
+    # (inference/detection/weights/best.pt): bottle, juice-cup, nescafe,
+    # plate, tissue — plus COCO fallback names (bottle, cup). Matching is
+    # substring-based (_is_litter_candidate), so each entry below matches
+    # any detected class containing it.
     litter_candidate_classes: Tuple[str, ...] = (
         "plastic bottle", "bottle", "cup", "can", "tissue paper",
         "paper", "wrapper", "trash", "garbage bag", "cardboard",
+        "nescafe", "plate", "tissue",
     )
 
     bind_radius: float = 60.0          # px: wrist→object to call it "held"

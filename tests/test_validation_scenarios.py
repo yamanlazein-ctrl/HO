@@ -54,7 +54,7 @@ def _generate_synthetic_video(path: str, mode: str = "positive") -> bool:
     if img is None:
         return False
     H, W = img.shape[:2]
-    
+
     from ultralytics import YOLO
     m = YOLO("yolov8n.pt")
     res = m(img, verbose=False)
@@ -68,42 +68,54 @@ def _generate_synthetic_video(path: str, mode: str = "positive") -> bool:
     if not person_box or not bottle_box:
         return False
 
+    # Fit the large photo to the small 800x600 canvas the validation tests use.
     bx1, by1, bx2, by2 = bottle_box
-    pad = 80
-    bottle_patch = img[max(0, by1 - pad):min(H, by2 + pad), max(0, bx1 - pad):min(W, bx2 + pad)].copy()
-    bp_h, bp_w = bottle_patch.shape[:2]
-
-    img_blanked = img.copy()
-    img_blanked[by1:by2, bx1:bx2] = 28
-
     out_W, out_H = 800, 600
+    s = min(out_W / W, out_H / H) * 0.92
+    Ws, Hs = max(8, int(W * s)), max(8, int(H * s))
+    img_s = cv2.resize(img, (Ws, Hs))
+    # tight pad (no hand) + inpainted background (no flat-gray artifact)
+    pad = 6
+    bp = img[max(0, by1 - pad):min(H, by2 + pad), max(0, bx1 - pad):min(W, bx2 + pad)].copy()
+    bp_h, bp_w = bp.shape[:2]
+    bp_s = cv2.resize(bp, (max(8, int(bp_w * s)), max(8, int(bp_h * s))))
+    ph_s, pw_s = bp_s.shape[:2]
+    mask = np.zeros((H, W), dtype=np.uint8)
+    mask[max(0, by1 - 4):min(H, by2 + 4), max(0, bx1 - 4):min(W, bx2 + 4)] = 255
+    blanked_s = cv2.inpaint(img.copy(), mask, 7, cv2.INPAINT_TELEA)
+    blanked_s = cv2.resize(blanked_s, (Ws, Hs))
+
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     vw = cv2.VideoWriter(path, fourcc, 15, (out_W, out_H))
     n_frames = 30
-    img_start_x, img_end_x = 40, out_W - W - 40
+    # person translates horizontally across the canvas
+    start_x = 10
+    end_x = max(start_x, out_W - Ws - 10)
 
     for i in range(n_frames):
         frame = np.full((out_H, out_W, 3), 28, dtype=np.uint8)
-        ix = int(img_start_x + i * (img_end_x - img_start_x) / (n_frames - 1))
-        iy = max(0, (out_H - H) // 2)
-        y_end, x_end = min(out_H, iy + H), min(out_W, ix + W)
+        frame[int(out_H * 0.75):, :] = (52, 110, 60)  # grass floor band
+        ix = int(start_x + i * (end_x - start_x) / max(1, n_frames - 1))
+        iy = max(0, (out_H - Hs) // 2)
+        h_=min(Hs, out_H - iy); w_=min(Ws, out_W - max(ix, 0))
+        # negative: person without bottle + static ground bottle
+        # put_down: person holds bottle the whole time (img_s) — no separate ground patch
+        src_img = blanked_s if mode == "negative" else img_s
+        if ix < 0:
+            src_x = -ix; w_ = min(Ws + ix, out_W)
+            frame[iy:iy + h_, 0:0 + w_] = src_img[:h_, src_x:src_x + w_]
+        else:
+            frame[iy:iy + h_, ix:min(out_W, ix + w_)] = src_img[:h_, :w_]
 
-        if mode == "positive":
-            if i < 12:
-                frame[iy:y_end, ix:x_end] = img[: y_end - iy, : x_end - ix]
-            else:
-                frame[iy:y_end, ix:x_end] = img_blanked[: y_end - iy, : x_end - ix]
-                gx = 120
-                gy = max(0, out_H - bp_h - 20)
-                frame[gy:min(out_H, gy + bp_h), gx:min(out_W, gx + bp_w)] = bottle_patch[: min(out_H, gy + bp_h) - gy, : min(out_W, gx + bp_w) - gx]
-        elif mode == "negative":
-            # Person has no bottle, walks past a static ground bottle
-            frame[iy:y_end, ix:x_end] = img_blanked[: y_end - iy, : x_end - ix]
-            gx, gy = 300, max(0, out_H - bp_h - 20)
-            frame[gy:min(out_H, gy + bp_h), gx:min(out_W, gx + bp_w)] = bottle_patch[: min(out_H, gy + bp_h) - gy, : min(out_W, gx + bp_w) - gx]
+        if mode == "negative":
+            # Walk past a static ground bottle (elsewhere from the person)
+            gx, gy = max(0, (out_W - pw_s) // 2), max(0, int(out_H * 0.82) - ph_s)
+            tx, ty = min(max(0, gx), out_W - pw_s), min(max(0, gy), out_H - ph_s)
+            frame[ty:ty + ph_s, tx:tx + pw_s] = bp_s
         elif mode == "put_down":
-            # Person places bottle and stays in frame
-            frame[iy:y_end, ix:x_end] = img[: y_end - iy, : x_end - ix]
+            # Person HOLDS the bottle the whole time and stays — no release,
+            # no separate ground bottle (the held image carries it).
+            pass
 
         vw.write(frame)
     vw.release()

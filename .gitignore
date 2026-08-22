@@ -36,6 +36,9 @@ backend/evidence_store/
 *.mov
 !docs/**/*
 
+# MoveNet local model cache (downloaded once at first run; large binary)
+models/movenet/
+
 # Env / secrets
 .env
 .env.*

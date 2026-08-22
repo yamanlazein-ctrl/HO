@@ -8,7 +8,7 @@ ultralytics>=8.2.0          # YOLO inference (best.pt)
 opencv-python>=4.9.0        # Video I/O, frame handling
 numpy>=1.24.0
 tensorflow>=2.13.0          # MoveNet pose estimation
-# bytetracker is bundled via ultralytics.tracker or a small vendored copy
+tensorflow-hub>=0.15.0      # MoveNet module loading (cached locally under models/movenet/)
 
 # --- Inference engine core (works without CV libs — pure logic) ---
 # state machine, voting, association, buffer are stdlib + numpy only

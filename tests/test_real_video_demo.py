@@ -115,49 +115,46 @@ def _build_real_littering_video(path: str) -> bool:
         return False
 
     bx1, by1, bx2, by2 = bottle_box
-    # generous context patch around the bottle so YOLO keeps detecting it
-    pad = 80
-    bottle_patch = img[max(0, by1 - pad):min(H, by2 + pad),
-                       max(0, bx1 - pad):min(W, bx2 + pad)].copy()
-    bp_h, bp_w = bottle_patch.shape[:2]
-
-    # blanked image = the photo with the bottle region erased so the bottle
-    # is NOT carried with the person after release
-    img_blanked = img.copy()
-    img_blanked[by1:by2, bx1:bx2] = 28
-
     out_W, out_H = 800, 600
+    s = min(out_W / W, out_H / H) * 0.92
+    Ws, Hs = max(8, int(W * s)), max(8, int(H * s))
+    # tight crop (no hand) + inpainted background (no flat-gray artifact)
+    tpad = 6
+    bp = img[max(0, by1 - tpad):min(H, by2 + tpad),
+             max(0, bx1 - tpad):min(W, bx2 + tpad)].copy()
+    ph_s, pw_s = max(8, int(bp.shape[0] * s)), max(8, int(bp.shape[1] * s))
+    bp_s = cv2.resize(bp, (pw_s, ph_s))
+    mask = np.zeros((H, W), dtype=np.uint8)
+    mask[max(0, by1 - 4):min(H, by2 + 4), max(0, bx1 - 4):min(W, bx2 + 4)] = 255
+    blanked = cv2.inpaint(img.copy(), mask, 7, cv2.INPAINT_TELEA)
+    img_s = cv2.resize(img, (Ws, Hs))
+    blanked_s = cv2.resize(blanked, (Ws, Hs))
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     vw = cv2.VideoWriter(path, fourcc, 15, (out_W, out_H))
 
     n_frames = 35
-    img_start_x = 40
-    img_end_x = out_W - W - 40
+    start_x, end_x = 10, max(10, out_W - Ws - 10)
+    # ground slot: fixed on canvas (not moving with the person)
+    gx = 60
+    gy = max(0, int(out_H * 0.80) - ph_s)
 
     for i in range(n_frames):
         frame = np.full((out_H, out_W, 3), 28, dtype=np.uint8)
+        frame[int(out_H * 0.75):, :] = (52, 110, 60)  # floor band
 
-        # person image translates right (walks)
-        ix = int(img_start_x + i * (img_end_x - img_start_x) / (n_frames - 1))
-        iy = max(0, (out_H - H) // 2)
-        y_end = min(out_H, iy + H)
-        x_end = min(out_W, ix + W)
+        ix = int(start_x + i * (end_x - start_x) / max(1, n_frames - 1))
+        iy = max(0, (out_H - Hs) // 2)
 
         if i < 15:
-            # HOLDING: keep the original image (with bottle) so bottle is near hand
-            frame[iy:y_end, ix:x_end] = img[: y_end - iy, : x_end - ix]
+            # HOLDING: keep the original scaled image (with bottle)
+            h_=min(Hs, out_H - iy); w_=min(Ws, out_W - ix)
+            frame[iy:iy + h_, ix:ix + w_] = img_s[:h_, :w_]
         else:
-            # RELEASE + GROUND: use the blanked image (bottle removed from person)
-            # and composite the bottle patch at a FIXED ground position that
-            # does not move with the person. As the person keeps translating
-            # right, the bottle↔person distance grows → association detects
-            # separation → RELEASE → OBJECT_ON_GROUND → PERSON_AWAY.
-            frame[iy:y_end, ix:x_end] = img_blanked[: y_end - iy, : x_end - ix]
-            gx = 120  # fixed ground x (does not move with person)
-            gy = max(0, out_H - bp_h - 20)
-            g_y_end = min(out_H, gy + bp_h)
-            g_x_end = min(out_W, gx + bp_w)
-            frame[gy:g_y_end, gx:g_x_end] = bottle_patch[: g_y_end - gy, : g_x_end - gx]
+            # RELEASE + GROUND: use the blanked image + static ground patch
+            h_=min(Hs, out_H - iy); w_=min(Ws, out_W - ix)
+            frame[iy:iy + h_, ix:ix + w_] = blanked_s[:h_, :w_]
+            ty, tx = min(max(0, gy), out_H - ph_s), min(max(0, gx), out_W - pw_s)
+            frame[ty:ty + ph_s, tx:tx + pw_s] = bp_s
 
         vw.write(frame)
     vw.release()
@@ -198,6 +195,7 @@ def test_real_video_full_pipeline_scenario_a(tmp_path):
             "detections (which is forbidden)."
         )
 
+    import cv2  # lazy — see _build_real_littering_video docstring
     cap = cv2.VideoCapture(video)
     frames = []
     while True:

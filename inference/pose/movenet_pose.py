@@ -1,8 +1,8 @@
 """
 MoveNet Pose — 🟢 wrapper.
 
-MoveNet (TensorFlow Lite / TF.js) gives 17 body keypoints per person.
-We only consume the subset the associator needs:
+MoveNet (TensorFlow Hub, TFLite-style signature) gives 17 body keypoints
+per person. We only consume the subset the associator needs:
     left_wrist, right_wrist, left_shoulder, right_shoulder
 and derive ``torso_center`` as the midpoint of the shoulders.
 
@@ -11,11 +11,22 @@ target), and the reference project already integrates it. We run it
 **lazily** — only on persons that the associator is currently tracking
 or considering, not on every detected person every frame. This is the
 single biggest CPU saving in the pipeline.
+
+OFFLINE POLICY (important for the demo laptop):
+  * First run WITH internet: the model is downloaded ONCE into
+    ``<repo>/models/movenet/`` (persistent, git-ignored cache).
+  * Every later run — including fully OFFLINE — loads from that local
+    cache. No internet required.
+  * If the cache is missing AND there is no internet, ``load()`` raises
+    a clear RuntimeError. The system must NEVER report AI READY when
+    MoveNet cannot load.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np  # type: ignore
@@ -28,6 +39,16 @@ KP_RIGHT_WRIST = 10
 KP_LEFT_SHOULDER = 5
 KP_RIGHT_SHOULDER = 6
 
+# Persistent local cache root: <repo>/models/movenet/
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_CACHE_ROOT = _REPO_ROOT / "models" / "movenet"
+
+# Deterministic first-run download handles (TF Hub; redirect to Kaggle storage).
+MODEL_URLS = {
+    "movenet_singlepose_thunder": "https://tfhub.dev/google/movenet/singlepose/thunder/4",
+    "movenet_singlepose_lightning": "https://tfhub.dev/google/movenet/singlepose/lightning/4",
+}
+
 
 @dataclass
 class PoseResult:
@@ -38,7 +59,7 @@ class PoseResult:
 
 class MovenetPose:
     """
-    Wraps a TF MoveNet model. Loads lazily.
+    Wraps a TF MoveNet model. Loads lazily into a PERSISTENT local cache.
 
     The inference input is a cropped person bbox (not the full frame) to
     keep the model small and fast.
@@ -48,18 +69,105 @@ class MovenetPose:
         self.model_name = model_name
         self.input_size = input_size
         self._model = None
+        self._loaded_from: Optional[str] = None  # "cache" | "download"
+
+    # ------------------------------------------------------------------ #
+    def _local_model_dir(self) -> Path:
+        return LOCAL_CACHE_ROOT / self.model_name
+
+    def _manifest_path(self) -> Path:
+        return LOCAL_CACHE_ROOT / "registry.json"
+
+    def _read_manifest(self) -> dict:
+        try:
+            import json
+            with open(self._manifest_path(), "r") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_manifest(self, key: str, dirname: str) -> None:
+        try:
+            import json
+            data = self._read_manifest()
+            data[key] = dirname
+            with open(self._manifest_path(), "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass  # manifest is an optimization; cache-by-URL still works
 
     def load(self) -> None:
+        """Load MoveNet from the local cache; download once if missing.
+
+        Raises RuntimeError with an explicit, actionable message when the
+        model cannot be loaded (no cache + no internet). Never silently
+        continues — callers must treat a failed load as fatal for pose.
+        """
         import tensorflow as tf  # type: ignore
-        # hub or tflite; using tf-hub movenet
-        if self.model_name == "movenet_singlepose_thunder":
-            self._model = tf.lite.Interpreter  # placeholder; real load below
-            # The reference project loads via tflite; we mirror the common path:
+
+        # 1) fast path: registered local copy (fully offline)
+        local_dir = self._local_model_dir()
+        if not (local_dir.is_dir() and any(local_dir.iterdir())):
+            # fall back to the registry-mapped TF Hub cache dir
+            cached = self._read_manifest().get(self.model_name)
+            if cached:
+                candidate = LOCAL_CACHE_ROOT / cached
+                if candidate.is_dir():
+                    local_dir = candidate
+
+        if local_dir.is_dir() and any(local_dir.iterdir()):
             import tensorflow_hub as hub  # type: ignore
-            self._model = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
-        else:
+            self._model = hub.load(str(local_dir))
+            self._loaded_from = "cache"
+            return
+
+        # 2) first run: download once into the persistent repo-local cache.
+        url = MODEL_URLS.get(self.model_name)
+        if url is None:
+            raise RuntimeError(
+                f"Unknown MoveNet model '{self.model_name}'. "
+                f"Known models: {sorted(MODEL_URLS)}"
+            )
+        try:
+            # Redirect TF Hub's cache into the repo so the download is
+            # persistent and later runs work fully offline.
+            LOCAL_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+            os.environ["TFHUB_CACHE_DIR"] = str(LOCAL_CACHE_ROOT)
+            before = {p.name for p in LOCAL_CACHE_ROOT.iterdir() if p.is_dir()}
             import tensorflow_hub as hub  # type: ignore
-            self._model = hub.load("https://tfhub.dev/google/movenet/singlepose/lightning/4")
+            self._model = hub.load(url)
+            after = {p.name for p in LOCAL_CACHE_ROOT.iterdir() if p.is_dir()}
+            new_dirs = sorted(after - before)
+            if not new_dirs:
+                # pre-existing cache (downloaded before manifest existed):
+                # register any dir that looks like a valid SavedModel
+                new_dirs = [
+                    d for d in sorted(after)
+                    if (LOCAL_CACHE_ROOT / d / "saved_model.pb").is_file()
+                ]
+            if new_dirs:
+                self._write_manifest(self.model_name, new_dirs[0])
+        except Exception as e:
+            self._model = None
+            raise RuntimeError(
+                f"MoveNet '{self.model_name}' could NOT be loaded. "
+                f"Local cache at {LOCAL_CACHE_ROOT} has no copy and the "
+                f"first-run download from {url} failed "
+                f"({type(e).__name__}: {e}). Connect to the internet ONCE "
+                f"to populate the cache, or manually place the extracted "
+                f"TF Hub module at {self._local_model_dir()}. The system "
+                f"will NOT report AI READY without pose."
+            ) from e
+        self._loaded_from = "download"
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._model is not None
+
+    @property
+    def loaded_from(self) -> Optional[str]:
+        return self._loaded_from
 
     def estimate(self, frame, person_bboxes) -> List[PoseResult]:
         """

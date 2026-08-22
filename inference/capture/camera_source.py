@@ -184,4 +184,3 @@ class VideoFileSource:
             if pkt is None:
                 break
             yield pkt
-            self._cap = None

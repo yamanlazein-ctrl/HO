@@ -92,6 +92,10 @@ class InferencePipeline:
         self._voters: Dict[Tuple[int, int], TemporalVoter] = {}
         # pending evidence awaiting post-window finalize
         self._pending: Dict[Tuple[int, int], EvidenceArtifact] = {}
+        # evidence artifacts that were finalized AND verified (non-empty files),
+        # keyed by event_id — lets in-process callers (video-upload analysis)
+        # persist them without an HTTP self-call.
+        self.finalized_artifacts: Dict[str, EvidenceArtifact] = {}
         self._last_analysis_ts: float = 0.0
         self._frame_count = 0
         self.events: List[PipelineEvent] = []
@@ -237,6 +241,11 @@ class InferencePipeline:
                     logging.getLogger("ai_littering").warning(
                         "Evidence video missing or empty for event %s", art.event_id
                     )
+                # record the verified artifact so embedders of the pipeline
+                # (e.g. the video-upload analysis job) can persist it without
+                # an HTTP self-call.
+                if snap_ok:
+                    self.finalized_artifacts[art.event_id] = art
                 # 7c) find the PipelineEvent and upload to backend
                 for ev in self.events:
                     if ev.event_id == art.event_id:

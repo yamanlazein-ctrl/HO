@@ -259,8 +259,13 @@ class LitteringStateMachine:
             return LitterState.HOLDING, "still holding"
 
         if s == LitterState.RELEASE:
-            # Reversion: re-grasp within window → back to HOLDING
-            if obs.hand_near_object and obs.person_re_grasped:
+            # Reversion: re-grasp within window → back to HOLDING.
+            # A REAL re-grasp means the object is held again AND has stopped
+            # falling. Right after a release the object is still near the
+            # hand for a few frames while it accelerates downward; treating
+            # that as a grasp would cancel every real throw (found by the
+            # real-video probe). While object_moving_down, it is flight.
+            if obs.hand_near_object and obs.person_re_grasped and not obs.object_moving_down:
                 if self._s.released_at is None or (obs.timestamp - self._s.released_at) <= cfg.regrasp_window:
                     return LitterState.HOLDING, "re-grasped (not littering)"
             if obs.object_stationary and obs.object_low:
@@ -270,9 +275,18 @@ class LitteringStateMachine:
             return LitterState.RELEASE, "in flight"
 
         if s == LitterState.OBJECT_ON_GROUND:
-            # Reversion: person picks it back up → HOLDING
-            if obs.hand_near_object:
+            # Reversion: person picks it back up → HOLDING.
+            # A true re-grasp from ground means the object leaves the ground
+            # band (it's lifted with the hand). The just-landed debris is
+            # briefly still settling (speed may still be above threshold) and
+            # sits right beside the hand in the throwing pose — treating that
+            # as "retrieved" would cancel every real throw. The synthetic
+            # probe's arm is frozen in the holding pose forever, exacerbating
+            # this; on a real camera the arm swings away naturally. An object
+            # that is still in the ground band is NOT being lifted.
+            if obs.hand_near_object and not obs.object_low:
                 return LitterState.HOLDING, "object retrieved from ground"
+
             # Reversion: person never leaves → NORMAL (put down, not littered)
             if self._s.grounded_at is not None and (obs.timestamp - self._s.grounded_at) >= cfg.abandon_window \
                     and not obs.person_moving_away:

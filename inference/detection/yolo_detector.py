@@ -153,6 +153,37 @@ class YoloDetector:
 
         return out
 
+    @staticmethod
+    def _dedup_contained(dets: List["TrackedDetection"], contain_thresh: float = 0.7) -> List["TrackedDetection"]:
+        """Suppress partial duplicate detections of the SAME physical object.
+
+        Standard NMS only removes boxes with IoU > ~0.55, so a small box
+        fully contained inside a bigger one (e.g. a bottle's cap/neck
+        detected separately from the whole bottle) survives and competes in
+        tracking. Real-video probing showed these phantoms create ghost
+        pairs in the association layer. Rule: process by confidence desc;
+        drop any detection whose overlap with an already-kept detection
+        covers >= ``contain_thresh`` of ITS OWN area (same person/object
+        group). This is standard containment-NMS practice.
+        """
+        kept: List[TrackedDetection] = []
+        for d in sorted(dets, key=lambda t: t.confidence, reverse=True):
+            x1, y1, x2, y2 = d.bbox
+            area = max(1e-6, (x2 - x1) * (y2 - y1))
+            contained = False
+            for k in kept:
+                if k.is_person != d.is_person:
+                    continue
+                kx1, ky1, kx2, ky2 = k.bbox
+                ix = max(0.0, min(x2, kx2) - max(x1, kx1))
+                iy = max(0.0, min(y2, ky2) - max(y1, ky1))
+                if (ix * iy) / area >= contain_thresh:
+                    contained = True
+                    break
+            if not contained:
+                kept.append(d)
+        return kept
+
     def _parse_tracked(self, r, is_person: bool, allow_fallback: bool = False) -> List["TrackedDetection"]:
         out: List[TrackedDetection] = []
         boxes = r.boxes
@@ -187,7 +218,7 @@ class YoloDetector:
                     track_id=tid, class_name=raw_name, confidence=conf,
                     bbox=(x1, y1, x2, y2), centroid=(cx, cy), is_person=False,
                 ))
-        return out
+        return self._dedup_contained(out)
 
     def _model_name_for(self, is_person: bool, cls_id: int) -> str:
         if is_person:
